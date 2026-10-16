@@ -13,16 +13,6 @@
 
 샘플 2,000건으로 시작하며, **분석 개요 → 검토 대상 → 청구 상세·AI 설명 → 분석 보고서** 순서로 사용합니다.
 
-## GitHub Pages 게시
-
-저장소 소유자 또는 Pages 관리 권한이 있는 계정으로 다음 항목을 설정합니다.
-
-1. 저장소 **Settings → Pages**를 엽니다.
-2. **Source**에서 **Deploy from a branch**를 선택합니다.
-3. **Branch**는 `main`, 폴더는 `/(root)`로 선택하고 **Save**를 누릅니다.
-
-게시 완료 후 https://ieunjuee.github.io/p-project/ 로 접속합니다. 이후 `main` 브랜치에 변경 사항을 올리면 갱신됩니다. 루트 `index.html`이 실제 앱인 `dist/index.html`을 엽니다.
-
 ## 구현 기능
 
 - UTF-8 CSV 업로드, 필수 열·날짜·금액·중복 검증과 제외 사유 표시
@@ -40,15 +30,35 @@
 
 GitHub Pages와 기본 정적 페이지는 **데모 설명 모드**입니다. 검증된 수치를 정해진 문장으로 설명하며 실제 LLM 출력으로 표시하지 않습니다. GitHub Pages는 이 프로젝트의 Node.js 서버를 실행하지 않습니다.
 
-실제 LLM 연결에는 Node.js 22 이상과 API 키가 필요합니다. `.env.example`을 `.env`로 복사하고 `OPENAI_API_KEY`를 설정한 후 실행합니다.
+<!-- [기존 문구 보존] 실제 LLM 연결에는 Node.js 22 이상과 API 키가 필요합니다. `.env.example`을 `.env`로 복사하고 `OPENAI_API_KEY`를 설정한 후 실행합니다. -->
+실제 LLM 연결에는 Node.js 22 이상과 **이 PC에 내려받은 로컬 모델(Ollama의 Qwen3 14B)**이 필요합니다. 모델 파일은 저장소에 들어 있지 않으므로 각자의 PC에 한 번 내려받아야 합니다. 모델이 없거나 Ollama가 꺼져 있으면 화면은 데모 설명 모드로 동작합니다. API 키는 필요 없습니다.
+
+### 로컬 LLM(Qwen3 14B) 준비 (처음 한 번만)
+
+1. **Ollama 설치**: [ollama.com](https://ollama.com)에서 설치 파일을 받아 설치하거나, Windows 터미널에서 `winget install --id Ollama.Ollama -e`를 실행합니다. 설치하면 Ollama가 백그라운드에서 실행됩니다.
+2. **모델 내려받기**: 터미널에서 `ollama pull qwen3:14b`를 실행합니다. 파일 크기는 약 9.3GB이고 인터넷 속도에 따라 시간이 걸리므로 디스크 여유 공간이 필요합니다.
+3. **설치 확인**: `ollama list`를 실행해 `qwen3:14b`가 목록에 보이는지 확인합니다. 브라우저에서 `http://localhost:11434`를 열어 `Ollama is running`이 보이면 서버가 켜져 있는 것입니다.
+4. **Node.js 확인**: `node --version`이 22 이상인지 확인합니다. 없으면 [nodejs.org](https://nodejs.org)에서 LTS 버전을 설치합니다.
+5. **설정 파일 만들기**: 저장소 폴더에서 `.env.example`을 `.env`로 복사합니다. Windows 명령 프롬프트는 `copy .env.example .env`, PowerShell은 `Copy-Item .env.example .env`, macOS와 Linux는 `cp .env.example .env`입니다. 기본값이 로컬 모델이라 고칠 내용은 없습니다.
+6. **서버 실행**: 아래 `node server.mjs`를 실행하고 `http://localhost:4177`을 엽니다. 상세 화면의 AI 검토 어시스턴트에 **로컬 LLM 연결**이 표시되면 준비가 끝난 것입니다.
+
+**컴퓨터 사양**: `qwen3:14b`는 실행 중에 GPU 메모리를 약 9.6GB 사용합니다(이 프로젝트는 RTX 3080 Ti 12GB에서 확인했습니다). GPU 메모리가 부족하면 일부가 CPU로 처리되어 느려질 수 있으며, `ollama ps`로 확인할 수 있습니다. 더 작은 모델(예: `qwen3:8b`)을 받아 `.env`의 `OLLAMA_MODEL`을 바꿀 수도 있지만, 이 프로젝트에서 확인한 모델은 `qwen3:14b`뿐입니다.
 
 ```sh
 node server.mjs
 ```
 
-브라우저에서 `http://localhost:4177`을 엽니다. 추가 패키지 설치는 없습니다. 키는 서버 환경변수에만 저장하며, `.env`는 Git에서 제외합니다. API 호출에는 고객 ID·의료기관 ID를 제외한 선택 청구의 분석 JSON을 전달합니다. 호출 실패 시 데모 설명으로 전환하고 분석은 유지합니다.
+<!-- [기존 문구 보존] 브라우저에서 `http://localhost:4177`을 엽니다. 추가 패키지 설치는 없습니다. 키는 서버 환경변수에만 저장하며, `.env`는 Git에서 제외합니다. API 호출에는 고객 ID·의료기관 ID를 제외한 선택 청구의 분석 JSON을 전달합니다. 호출 실패 시 데모 설명으로 전환하고 분석은 유지합니다. -->
+브라우저에서 `http://localhost:4177`을 엽니다. 추가 패키지 설치는 없습니다. `.env`는 Git에서 제외합니다. 설명 생성에는 고객 ID·의료기관 ID를 제외한 선택 청구의 분석 JSON만 이 PC의 Ollama에 전달하며 외부로 전송하지 않습니다. 호출 실패 시 데모 설명으로 전환하고 분석은 유지합니다.
 
-실제 API 호출은 키 미제공으로 검증하지 않았으며, 요청·응답 처리는 모의 API로 테스트합니다.
+<!-- [기존 문구 보존] 실제 API 호출은 키 미제공으로 검증하지 않았으며, 요청·응답 처리는 모의 API로 테스트합니다. -->
+로컬 모델(Qwen3 14B)로는 서버와 화면에서 동작을 확인했습니다. OpenAI 방식은 키 미제공으로 실제 호출을 검증하지 않았고 모의 API로 테스트합니다.
+
+### 로컬 모델 설정과 OpenAI 선택
+
+기본값은 이 PC에서 돌아가는 로컬 모델(Ollama, Qwen3 14B)입니다. 분석 근거 JSON이 외부로 나가지 않고 이 PC 안에서만 처리됩니다. 모델과 주소는 `OLLAMA_MODEL`(기본 `qwen3:14b`), `OLLAMA_URL`(기본 `http://localhost:11434`)로 바꿉니다.
+
+Qwen3의 생각 과정은 끄고(`think:false`), 응답은 서버가 정해진 JSON 스키마로 내도록 강제합니다. 첫 호출은 모델을 메모리에 올리느라 더 걸릴 수 있고, 화면은 30초 안에 응답이 없으면 데모 설명으로 전환합니다. Ollama가 꺼져 있거나 응답이 형식에 맞지 않으면 분석은 유지하고 데모 설명으로 전환합니다. 이전처럼 OpenAI를 쓰려면 `.env`에 `LLM_PROVIDER=openai`와 `OPENAI_API_KEY`를 설정합니다. (기존에는 OpenAI가 기본값이었고, 지금은 `LLM_PROVIDER`를 지정하지 않으면 로컬 모델을 씁니다.)
 
 ## 데이터와 분석 범위
 

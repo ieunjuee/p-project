@@ -2,7 +2,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {explainClaim} from './llm.mjs';
+import {explainClaim,llmStatus} from './llm.mjs';
 import engine from './dist/engine.js';
 
 const folder=path.dirname(fileURLToPath(import.meta.url));
@@ -14,14 +14,15 @@ const server=http.createServer(async(req,res)=>{
   try{
     const base=`http://localhost:${port}`,url=new URL(req.url,base);
     if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`){send(res,403,{error:'다른 출처의 요청은 허용하지 않습니다.'});return;}
-    if(url.pathname==='/api/status'&&req.method==='GET'){send(res,200,{connected:!!process.env.OPENAI_API_KEY});return;}
+    if(url.pathname==='/api/status'&&req.method==='GET'){send(res,200,await llmStatus());return;}
     if(url.pathname==='/runtime.js'&&req.method==='GET'){send(res,200,'window.INSURELENS_SERVER = true;','text/javascript; charset=utf-8');return;}
     if(url.pathname==='/api/explain'&&req.method==='POST'){
       if(!req.headers['content-type']?.startsWith('application/json')){send(res,415,{error:'JSON 요청이 필요합니다.'});return;}
       let body='';for await(const chunk of req){body+=chunk;if(body.length>32000){send(res,413,{error:'요청이 너무 큽니다.'});return;}}
       const input=JSON.parse(body);let result;
+      // [기존 보존] 연결 실패 시 reason 문구는 'API 연결 실패'였고, 아래 catch에서 '로컬 LLM 연결 실패'로 바꿨다
       try{result=await explainClaim(input.evidence,input.question||'');}
-      catch(error){if(/형식|수치|범위|근거|질문|점수/.test(error.message)){send(res,400,{error:error.message});return;}result={...engine.demoExplain(input.evidence,input.question||''),reason:'API 연결 실패'};}
+      catch(error){if(/형식|수치|범위|근거|질문|점수/.test(error.message)){send(res,400,{error:error.message});return;}result={...engine.demoExplain(input.evidence,input.question||''),reason:'로컬 LLM 연결 실패'};}
       send(res,200,result);return;
     }
     if(req.method!=='GET'&&req.method!=='HEAD'){send(res,405,{error:'허용하지 않는 요청입니다.'});return;}
@@ -30,4 +31,4 @@ const server=http.createServer(async(req,res)=>{
     const content=await readFile(filename);send(res,200,req.method==='HEAD'?'':content,mime[path.extname(filename)]||'application/octet-stream');
   }catch(error){send(res,error.code==='ENOENT'?404:400,{error:error.code==='ENOENT'?'페이지를 찾을 수 없습니다.':'요청을 처리할 수 없습니다.'});}
 });
-server.listen(port,'127.0.0.1',()=>console.log(`InsureLens: http://localhost:${port}\nLLM: ${process.env.OPENAI_API_KEY?'API connected':'Demo explanations (no API key)'}\nStop: Ctrl+C`));
+server.listen(port,'127.0.0.1',async()=>{const s=await llmStatus();console.log(`InsureLens: http://localhost:${port}\nLLM: ${s.connected?`${s.provider}${s.model?` (${s.model})`:''} connected`:'Demo explanations (LLM not connected)'}\nStop: Ctrl+C`);});
