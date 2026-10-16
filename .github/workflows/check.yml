@@ -1,0 +1,27 @@
+name: Check InsureLens
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - name: Check JavaScript syntax
+        run: |
+          node --check dist/engine.js
+          node --check dist/app.js
+          node --check server.mjs
+          node --check llm.mjs
+      - name: Run analysis and LLM integration tests
+        run: node --test tests/engine.test.cjs

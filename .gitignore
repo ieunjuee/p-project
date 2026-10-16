@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# InsureLens JavaScript source and local-only files
+!dist/
+!dist/**
+node_modules/
+.openai/
+tmp/
+*.zip
