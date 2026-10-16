@@ -31,6 +31,10 @@
 - 청구별 근거, 설명·질문 응답, 담당자 검토 메모
 - 분석 결과 CSV, 인쇄 창을 통한 PDF 저장
 - 과제 요구사항과 구현 기능을 비교하는 ‘과제 적합성’ 화면
+- 금액·검토점수 히스토그램, 원형·도넛 구성비, 규칙별 탐지 막대, 월별 건수·금액 추이
+- 차트 구간을 눌러 청구 목록 필터링, 선택 조건 해제, 필터 결과 CSV 내보내기
+
+차트의 범례와 조각은 실제 건수·비율을 표시합니다. 금액 히스토그램은 동일 간격 또는 로그 간격으로 전환할 수 있고, 큰 금액도 제외하지 않습니다. ‘수치 표로 보기’에서 차트 집계값을 표로 확인할 수 있습니다. 검토 대상 화면에서는 표와 차트가 같은 필터 조건을 사용합니다.
 
 ## 설명 모드와 실제 LLM 연결
 
@@ -59,10 +63,14 @@ node server.mjs
 ## 파일 구조와 테스트
 
 - `dist/`: 브라우저에서 실행되는 HTML·CSS·JavaScript
+- `dist/charts.js`, `dist/charts.css`: 차트 집계·표시·상호작용·반응형 스타일
 - `server.mjs`, `llm.mjs`: 선택적인 LLM 서버 연동
-- `tests/engine.test.cjs`: 누출 방지·재현성·점수·CSV·API 전달 검증
+- `tests/engine.test.cjs`, `tests/charts.test.cjs`, `tests/ui.test.cjs`: 분석, 집계 경계값, 화면 상태 전환 검증
 - `.github/workflows/check.yml`: 커밋·PR 자동 검사
 
 ```sh
-node --test tests/engine.test.cjs
+npm ci --ignore-scripts
+npm test
 ```
+
+테스트용 DOM 환경에만 개발 의존성(jsdom)을 사용합니다. 페이지를 열거나 기본 분석·선택적 LLM 서버를 실행할 때에는 패키지 설치가 필요 없습니다. DOM 테스트는 실제 브라우저의 화면 배치 검증을 대신하지 않습니다.

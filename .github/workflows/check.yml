@@ -21,7 +21,10 @@ jobs:
         run: |
           node --check dist/engine.js
           node --check dist/app.js
+          node --check dist/charts.js
           node --check server.mjs
           node --check llm.mjs
-      - name: Run analysis and LLM integration tests
-        run: node --test tests/engine.test.cjs
+      - name: Install test-only dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run analysis, chart and UI tests
+        run: npm test
