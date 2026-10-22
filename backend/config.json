@@ -1,0 +1,15 @@
+{
+  "spec_status": "PDF_NOT_ATTACHED",
+  "spec_note": "사용자 프롬프트의 Overall/처리 경로만 확인됨. 아래 지표 임계값, 비율, D 산식, 스키마는 PDF 대조 전 실험용 대체 설정.",
+  "generation": {
+    "people": 500, "med_claims": 5000, "accidents": 600, "tuning_fraction": 0.6,
+    "scenarios": {"normal": 0.5, "normal_split": 0.1, "frequent_normal": 0.1, "duplicate": 0.08, "nondisclosure": 0.06, "repeated_minor": 0.06, "excessive_treatment": 0.06, "compound": 0.04}
+  },
+  "medical": {"window_days": 30, "visit_count": 8, "short_gap_days": 2, "cost_ratio": 3, "repeat_count": 2, "hospital_count": 4, "weights": [20, 15, 25, 25, 15]},
+  "auto": {"window_days": 365, "accident_count": 3, "short_gap_days": 30, "minor_ratio": 0.8, "repair_ratio": 3, "repeat_count": 2, "weights": [25, 15, 15, 25, 20]},
+  "model": {"seed": 42, "trees": 48, "sample_size": 128, "rule_weight": 0.85, "min_tuning_people": 20},
+  "cross": {"link_days": 30, "confirmed_score": 90, "suspected_score": 65, "unknown_score": 30, "duplicate_formula": "min(med_paid, auto_paid, max(0, med_paid + auto_paid - actual_cost))", "ratio_denominator": "sum unique matched actual_cost"},
+  "routing": {"fast_below": 30, "review_at": 60, "weights": [0.3, 0.3, 0.4]},
+  "agent": {"max_rounds": 10, "max_tool_calls": 12, "claims_limit": 12, "timeout_seconds": 30},
+  "targets": {"duplicate_recall": 0.9, "risky_fast_rate": 0.02, "confusing_normal_false_positive": 0.15, "numeric_accuracy": 1.0, "citation_rate": 0.95, "repeat_consistency": 0.9, "input_token_ratio_vs_A": 0.5, "seconds_per_person": 60}
+}
