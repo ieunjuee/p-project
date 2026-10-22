@@ -22,6 +22,8 @@ class Person(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     partition: Mapped[str] = mapped_column(String(12), index=True)
     age: Mapped[int] = mapped_column(Integer)
+    sex: Mapped[str] = mapped_column(String(12), default="unspecified")
+    products: Mapped[list] = mapped_column(JSON, default=lambda: ["실손의료보험", "자동차보험"])
     policy_start: Mapped[object] = mapped_column(Date)
     declared_conditions: Mapped[list] = mapped_column(JSON, default=list)
     __table_args__ = (CheckConstraint("partition IN ('tuning','evaluation')"), CheckConstraint("age BETWEEN 18 AND 100"))
@@ -32,6 +34,7 @@ class KCD(Base):
     code: Mapped[str] = mapped_column(String(12), primary_key=True)
     description: Mapped[str] = mapped_column(String(100))
     injury: Mapped[bool] = mapped_column(Boolean)
+    body_part: Mapped[str] = mapped_column(String(32), default="other")
 
 
 class MedClaim(Base):
@@ -44,6 +47,9 @@ class MedClaim(Base):
     receipt_id: Mapped[str | None] = mapped_column(String(64))
     component: Mapped[str] = mapped_column(String(24), default="treatment")
     kcd_code: Mapped[str] = mapped_column(ForeignKey("kcd_master.code"))
+    claim_date: Mapped[object] = mapped_column(Date, default=lambda: now().date())
+    treatment_type: Mapped[str] = mapped_column(String(24), default="outpatient")
+    accident_flag: Mapped[str] = mapped_column(String(12), default="disease")
     actual_cost: Mapped[int | None] = mapped_column(Integer)
     claimed_amount: Mapped[int] = mapped_column(Integer)
     paid_amount: Mapped[int | None] = mapped_column(Integer)
@@ -57,6 +63,11 @@ class AutoAccident(Base):
     accident_date: Mapped[object] = mapped_column(Date)
     accident_type: Mapped[str] = mapped_column(String(24))
     severity: Mapped[str] = mapped_column(String(12))
+    report_date: Mapped[object] = mapped_column(Date, default=lambda: now().date())
+    role: Mapped[str] = mapped_column(String(12), default="victim")
+    fault_ratio: Mapped[int] = mapped_column(Integer, default=0)
+    counterparty_id: Mapped[str] = mapped_column(String(32), default="unknown")
+    repair_shop_id: Mapped[str] = mapped_column(String(32), default="unknown")
     __table_args__ = (UniqueConstraint("id", "person_id"),)
 
 
@@ -65,6 +76,7 @@ class AutoClaim(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     person_id: Mapped[str] = mapped_column(ForeignKey("person.id"), index=True)
     accident_id: Mapped[str] = mapped_column(String(32), index=True)
+    claim_date: Mapped[object] = mapped_column(Date, default=lambda: now().date())
     service_date: Mapped[object] = mapped_column(Date)
     treatment_end: Mapped[object] = mapped_column(Date)
     hospital_id: Mapped[str] = mapped_column(String(32))
@@ -84,6 +96,7 @@ class ScenarioLabel(Base):
     risky: Mapped[bool] = mapped_column(Boolean)
     duplicate: Mapped[bool] = mapped_column(Boolean)
     confusing_normal: Mapped[bool] = mapped_column(Boolean)
+    injected_signals: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class Dataset(Base):

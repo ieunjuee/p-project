@@ -12,7 +12,7 @@ def load_config():
 
 
 def validate_config(c):
-    assert c["spec_status"] == "PDF_NOT_ATTACHED", "PDF 검증 상태는 코드 검토로만 변경합니다."
+    assert c["spec_status"] == "PDF_REVIEWED", "PDF 검증 상태는 코드 검토로만 변경합니다."
     for domain in ("medical", "auto"):
         assert len(c[domain]["weights"]) == 5 and sum(c[domain]["weights"]) == 100
         assert all(v >= 0 for v in c[domain]["weights"])

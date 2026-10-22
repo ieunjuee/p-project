@@ -49,9 +49,17 @@ class Analysis:
             if person.partition == "tuning":
                 for m in self.med[pid]:
                     if m.actual_cost is not None:
-                        costs[m.kcd_code].append(m.actual_cost)
+                        costs[(m.kcd_code, m.treatment_type)].append(m.actual_cost)
                 repairs.extend(a.actual_cost for a in self.auto[pid] if a.component == "repair" and a.actual_cost is not None)
         self.med_baseline = {k: median(v) for k, v in costs.items() if v}
+        self.med_peers = costs
+        self.repair_peers = defaultdict(list)
+        for pid in self.people:
+            if self.people[pid].partition == "tuning":
+                for row in self.auto[pid]:
+                    if row.component == "repair" and row.actual_cost is not None:
+                        accident = next(a for a in self.accidents[pid] if a.id == row.accident_id)
+                        self.repair_peers[accident.accident_type].append(row.actual_cost)
         self.repair_baseline = median(repairs) if repairs else None
         self.cache, self.models = {}, {}
         self._fit_models()
@@ -68,21 +76,28 @@ class Analysis:
 
     def _features(self, pid, domain):
         cfg = self.config["medical" if domain == "med" else "auto"]
+        def percentile(value, peers):
+            return sum(x < value for x in peers) / len(peers) if peers else 0
         if domain == "med":
             rows = self.med[pid]
-            dates = [r.service_date for r in rows]
-            ratio = max((r.actual_cost / self.med_baseline[r.kcd_code] for r in rows if r.actual_cost is not None and self.med_baseline.get(r.kcd_code, 0) > 0), default=None)
-            repeat = max(Counter((r.receipt_id, r.hospital_id, r.service_date, r.component) for r in rows if r.receipt_id).values(), default=0)
-            hospitals = max((len({r.hospital_id for r in rows if day <= r.service_date <= day + timedelta(days=cfg["window_days"])}) for day in set(dates)), default=0)
-            return [max_window(dates, cfg["window_days"]), min_gap(dates), ratio, repeat, hospitals]
+            diseases = defaultdict(list)
+            for r in rows:
+                diseases[r.kcd_code].append(r)
+            frequency = max((max_window([r.service_date for r in rs], cfg["window_days"]) for rs in diseases.values()), default=0)
+            gaps = []
+            for rs in diseases.values():
+                dates = sorted(set(r.service_date for r in rs))
+                if len(dates) > 1:
+                    gaps.append(sum((b-a).days for a,b in zip(dates,dates[1:]))/(len(dates)-1))
+            cost = max((percentile(r.actual_cost, self.med_peers[(r.kcd_code,r.treatment_type)]) for r in rows if r.actual_cost is not None), default=0)
+            repeat = max(max(Counter(r.receipt_id for r in rows if r.receipt_id).values(), default=0), max(Counter((r.service_date,r.hospital_id,r.claimed_amount) for r in rows).values(), default=0))
+            hospitals = max((len({r.hospital_id for r in rs if day <= r.service_date <= day + timedelta(days=cfg["window_days"])}) for rs in diseases.values() for day in {r.service_date for r in rs}), default=0)
+            return [frequency, min(gaps, default=None), cost, repeat, hospitals]
         acc, claims = self.accidents[pid], self.auto[pid]
-        dates = [r.accident_date for r in acc]
-        repairs = [r.actual_cost for r in claims if r.component == "repair" and r.actual_cost is not None]
-        ratio = max(repairs) / self.repair_baseline if repairs and self.repair_baseline else None
-        repeat = max(Counter((r.receipt_id, r.hospital_id, r.service_date, r.component) for r in claims if r.receipt_id).values(), default=0)
-        # A minor accident on its own is not an abnormal accident type.
-        minor = sum(a.severity == "minor" for a in acc) / len(acc) if len(acc) >= cfg["accident_count"] else 0
-        return [max_window(dates, cfg["window_days"]), min_gap(dates), minor, ratio, repeat]
+        repair = max((percentile(r.actual_cost,self.repair_peers[next(a.accident_type for a in acc if a.id == r.accident_id)]) for r in claims if r.component == "repair" and r.actual_cost is not None),default=0)
+        minor = int(any(a.severity == "minor" and any(c.accident_id == a.id and c.component == "treatment" for c in claims) for a in acc))
+        repeat = max(max(Counter(a.counterparty_id for a in acc if a.counterparty_id != "unknown").values(),default=0),max(Counter(a.repair_shop_id for a in acc if a.repair_shop_id != "unknown").values(),default=0),max(Counter((c.accident_id,c.component) for c in claims).values(),default=0))
+        return [max_window([a.accident_date for a in acc],cfg["window_days"]), min_gap([a.accident_date for a in acc]), minor, repair, repeat]
 
     def _fit_models(self):
         tuning = [pid for pid, p in self.people.items() if p.partition == "tuning"]
@@ -109,11 +124,11 @@ class Analysis:
         values = self._features(pid, domain)
         if domain == "med":
             names = ["진료 횟수", "진료 간격", "진료비 이상도", "반복 청구", "의료기관 분산"]
-            limits = [cfg["visit_count"], cfg["short_gap_days"], cfg["cost_ratio"], cfg["repeat_count"], cfg["hospital_count"]]
+            limits = [cfg["visit_count"], cfg["short_gap_days"], cfg["cost_percentile"], cfg["repeat_count"], cfg["hospital_count"]]
         else:
             names = ["사고 횟수", "사고 간격", "사고 유형(반복 경미)", "수리비 이상도", "반복 청구"]
-            limits = [cfg["accident_count"], cfg["short_gap_days"], cfg["minor_ratio"], cfg["repair_ratio"], cfg["repeat_count"]]
-        signals = [{"name": name, "value": round(value, 5) if value is not None else None, "threshold": limit, "hit": value is not None and (value <= limit if i == 1 else value >= limit), "weight": cfg["weights"][i]} for i, (name, value, limit) in enumerate(zip(names, values, limits))]
+            limits = [cfg["accident_count"], cfg["short_gap_days"], 1, cfg["repair_percentile"], cfg["repeat_count"]]
+        signals = [{"name": name, "value": round(value, 5) if value is not None else None, "threshold": limit, "hit": value is not None and (value < limit if i == 1 else value >= limit), "weight": cfg["weights"][i]} for i, (name, value, limit) in enumerate(zip(names, values, limits))]
         rule = sum(s["weight"] for s in signals if s["hit"])
         ml, enabled = 0, domain in self.models
         if enabled:
@@ -126,7 +141,7 @@ class Analysis:
         if not (self.med[pid] if domain == "med" else self.accidents[pid]):
             score = 0
         ids = [f"MED:{r.id}" for r in self.med[pid]] if domain == "med" else [f"ACC:{r.id}" for r in self.accidents[pid]] + [f"AUTO:{r.id}" for r in self.auto[pid]]
-        result = {"score": score, "rule_score": rule, "model_score": round(ml, 4), "model_enabled": enabled, "fit_partition": "tuning", "signals": signals, "evidence_ids": ids, "baseline": self.med_baseline if domain == "med" else self.repair_baseline}
+        result = {"score": score, "rule_score": rule, "model_score": round(ml, 4), "model_enabled": enabled, "fit_partition": "tuning", "signals": signals, "evidence_ids": ids, "baseline": {"|".join(k): v for k,v in self.med_baseline.items()} if domain == "med" else self.repair_baseline}
         self.cache[key] = result
         return result
 
@@ -143,70 +158,58 @@ class Analysis:
                 treatments = [c for c in self.auto[pid] if c.accident_id == a.id and c.component == "treatment"]
                 same_hospital = any(c.hospital_id == m.hospital_id for c in treatments)
                 overlap = any(max(c.service_date, m.service_date) <= min(c.treatment_end, m.treatment_end) for c in treatments)
-                if same_hospital or overlap:
+                if True:
                     links.append({"med_id": m.id, "accident_id": a.id, "day_gap": gap, "injury_kcd": m.kcd_code, "same_hospital": same_hospital, "treatment_overlap": overlap, "evidence_ids": [f"MED:{m.id}", f"ACC:{a.id}"] + [f"AUTO:{c.id}" for c in treatments]})
         return {"links": links, "count": len(links), "evidence_ids": sorted({e for l in links for e in l["evidence_ids"]})}
 
     def duplicate(self, pid):
         linked = self.link(pid)
         allowed = {(l["med_id"], l["accident_id"]) for l in linked["links"]}
-        med_groups, auto_groups = defaultdict(list), defaultdict(list)
-        for rows, groups in ((self.med[pid], med_groups), (self.auto[pid], auto_groups)):
-            for r in rows:
-                if r.component != "treatment":
+        linked_mids = {l["med_id"] for l in linked["links"]}
+        candidates = []
+        for m in self.med[pid]:
+            for a in self.auto[pid]:
+                if (m.id,a.accident_id) not in allowed or a.component == "repair":
                     continue
-                # Missing receipts stay in one date/hospital/component pool, never a Cartesian product.
-                key = (r.hospital_id, r.service_date, r.component)
-                groups[key].append(r)
-        matches, total_d, denominator = [], 0, 0
-        for key, med_rows in med_groups.items():
-            auto_rows = auto_groups.get(key, [])
-            if not auto_rows:
+                exact = bool(m.receipt_id and m.receipt_id == a.receipt_id)
+                same_day_hospital = m.hospital_id == a.hospital_id and m.service_date == a.service_date
+                similar = abs(m.claimed_amount-a.claimed_amount) <= self.config["cross"]["amount_tolerance"]*max(m.claimed_amount,a.claimed_amount,1)
+                separate = m.component != a.component or m.treatment_end < a.service_date or a.treatment_end < m.service_date
+                if exact or same_day_hospital and similar or separate:
+                    candidates.append((not exact, m.id,a.id,m,a,exact,separate))
+        # Disjoint claim matching: no payout can be counted in two candidate pairs.
+        used_m,used_a,matches = set(),set(),[]
+        for _,_,_,m,a,exact,separate in sorted(candidates,key=lambda x:(x[0],-min(x[3].paid_amount or 0,x[4].paid_amount or 0),x[1],x[2])):
+            if m.id in used_m or a.id in used_a:
                 continue
-            used_m, used_a = set(), set()
-            receipts = sorted({r.receipt_id for r in med_rows if r.receipt_id} & {r.receipt_id for r in auto_rows if r.receipt_id})
-            pools = []
-            for receipt in receipts:
-                ms, acs = [r for r in med_rows if r.receipt_id == receipt], [r for r in auto_rows if r.receipt_id == receipt]
-                if not any((m.id, a.accident_id) in allowed for m in ms for a in acs):
-                    continue
-                pools.append((ms, acs, True))
-                used_m.update(m.id for m in ms)
-                used_a.update(a.id for a in acs)
-            ms, acs = [r for r in med_rows if r.id not in used_m], [r for r in auto_rows if r.id not in used_a]
-            if ms and acs and any((m.id, a.accident_id) in allowed for m in ms for a in acs):
-                pools.append((ms, acs, False))
-            for ms, acs, exact in pools:
-                costs = {r.actual_cost for r in ms + acs}
-                paid_known = all(r.paid_amount is not None for r in ms + acs)
-                cost_known = exact and None not in costs and len(costs) == 1
-                mp = sum(r.paid_amount or 0 for r in ms)
-                ap = sum(r.paid_amount or 0 for r in acs)
-                cost = next(iter(costs)) if cost_known else None
-                d = min(mp, ap, max(0, mp + ap - cost)) if cost_known and paid_known else None
-                if not paid_known or (exact and not cost_known):
-                    status = "unknown"
-                elif not exact:
-                    status = "suspected" if mp > 0 and ap > 0 else "unknown"
-                else:
-                    status = "confirmed_payment_overlap" if d > 0 else "normal_split"
-                total_d += d or 0
-                denominator += cost or 0
-                matches.append({"status": status, "receipt_id": ms[0].receipt_id if exact else None, "hospital_id": key[0], "service_date": key[1].isoformat(), "med_paid": mp if paid_known else None, "auto_paid": ap if paid_known else None, "actual_cost": cost, "D": d, "evidence_ids": [f"MED:{m.id}" for m in ms] + [f"AUTO:{a.id}" for a in acs]})
-        statuses = {m["status"] for m in matches}
-        profile = self.profile(pid)
-        med = self.signals(pid, "med")
-        auto = self.signals(pid, "auto")
-        concerns = []
-        if profile["undeclared_prior_codes"]:
-            concerns.append("policy_disclosure_conflict")
-        if auto["signals"][0]["hit"] and auto["signals"][2]["hit"]:
-            concerns.append("repeated_minor_accidents")
-        if linked["count"] and med["signals"][0]["hit"] and med["signals"][2]["hit"]:
-            concerns.append("minor_accident_excessive_treatment")
-        cfg = self.config["cross"]
-        score = cfg["confirmed_score"] if "confirmed_payment_overlap" in statuses else cfg["suspected_score"] if "suspected" in statuses or concerns else cfg["unknown_score"] if "unknown" in statuses else 0
-        return {"matches": matches, "D": total_d, "duplicate_ratio": round(total_d / denominator, 6) if denominator else None, "ratio_denominator": denominator, "score": score, "confirmed": "confirmed_payment_overlap" in statuses, "unknown": "unknown" in statuses, "concerns": concerns, "formula_status": "provisional_pending_PDF", "evidence_ids": sorted({e for m in matches for e in m["evidence_ids"]} | set(profile["evidence_ids"]) | set(linked["evidence_ids"]))}
+            if not exact and not separate and (not m.receipt_id or not a.receipt_id):
+                status="unknown"
+            elif separate:
+                status="normal_split"
+            elif m.paid_amount is None or a.paid_amount is None:
+                status="unknown"
+            elif m.paid_amount > 0 and a.paid_amount > 0:
+                status="confirmed_payment_overlap" if exact else "suspected"
+            else:
+                status="normal_split"
+            used_m.add(m.id); used_a.add(a.id)
+            d=min(m.paid_amount,a.paid_amount) if status in {"confirmed_payment_overlap","suspected"} else 0
+            matches.append({"status":status,"receipt_id":m.receipt_id,"hospital_id":m.hospital_id,"service_date":m.service_date.isoformat(),"med_paid":m.paid_amount,"auto_paid":a.paid_amount,"actual_cost":m.actual_cost,"D":d,"evidence_ids":[f"MED:{m.id}",f"AUTO:{a.id}"]})
+        denominator=sum(m.paid_amount or 0 for m in self.med[pid] if m.id in linked_mids)
+        total_d=sum(m["D"] for m in matches)
+        disclosure=[m for m in self.med[pid] if m.id in linked_mids and m.accident_flag == "disease"]
+        preexisting=set()
+        for l in linked["links"]:
+            acc=next(a for a in self.accidents[pid] if a.id == l["accident_id"])
+            for m in self.med[pid]:
+                if 0 < (acc.accident_date-m.service_date).days <= self.config["cross"]["prior_days"] and m.kcd_code == l["injury_kcd"]:
+                    preexisting.add(m.id)
+        ratio=total_d/denominator if denominator else 0
+        cfg=self.config["cross"]
+        score=min(100,ratio*cfg["ratio_weight"]+len(disclosure)*cfg["disclosure_weight"]+len(preexisting)*cfg["preexisting_weight"])
+        concerns=(["accident_disclosure_check"] if disclosure else [])+(["preexisting_condition_check"] if preexisting else [])
+        statuses={m["status"] for m in matches}
+        return {"matches":matches,"D":total_d,"duplicate_ratio":round(ratio,6) if denominator else None,"ratio_denominator":denominator,"score":round(score,4),"confirmed":"confirmed_payment_overlap" in statuses,"unknown":"unknown" in statuses or any(m.paid_amount is None for m in self.med[pid] if m.id in linked_mids),"concerns":concerns,"disclosure_count":len(disclosure),"preexisting_count":len(preexisting),"formula_status":"PDF_page_4","evidence_ids":sorted({e for m in matches for e in m["evidence_ids"]}|set(linked["evidence_ids"])|{f"MED:{m.id}" for m in disclosure}|{f"MED:{i}" for i in preexisting})}
 
     def compute(self, pid):
         med, auto, cross = self.signals(pid, "med"), self.signals(pid, "auto"), self.duplicate(pid)
