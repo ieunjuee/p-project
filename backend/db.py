@@ -137,6 +137,12 @@ class Evaluation(Base):
 def database(url=None):
     (ROOT / "data").mkdir(exist_ok=True)
     url = url or os.getenv("DATABASE_URL", "sqlite:///" + (ROOT / "data/aura.sqlite3").as_posix())
+    # Managed Postgres providers return URLs without a driver suffix.
+    # This project installs psycopg 3, rather than psycopg2.
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
     options = {}
     if url.startswith("sqlite"):
         options["connect_args"] = {"check_same_thread": False}

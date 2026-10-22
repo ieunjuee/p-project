@@ -48,3 +48,13 @@ python -m pytest tests/test_aura.py tests/test_aura_api.py -q
 ```
 
 기존 JS 테스트 25개, AURA DOM 2개, Python 13개 통과. FastAPI TestClient의 httpx 사용에 관한 의존성 폐기 예정 경고 1건이 있습니다. 실패 결과를 숨기지 않으며, 단계별 상태는 `IMPLEMENTATION_STATUS.md`에 기록합니다.
+
+## Render 연결 배포 준비
+
+`render.yaml`에 Python API와 PostgreSQL의 무료 데모 구성을 정의했습니다. 관리자 토큰은 Render가 생성하고 GitHub Pages 출처만 API 쓰기 요청에 허용합니다. `AURA_BOOTSTRAP_DEMO=true`는 빈 DB에만 seed 42 데이터와 규칙 기반 조사 결과를 초기화하며 기존 DB를 덮어쓰지 않습니다.
+
+계정 연결 후 Render에 서비스를 실제 생성하고, 배포된 `/api/health`·CORS·관리자 인증을 확인한 다음 `dist/aura-config.js`의 `apiBase`에 검증된 HTTPS 주소를 반영합니다. 이 파일에는 토큰을 넣지 않습니다. 화면 상단의 ‘연결 설정’에서 API 주소와 탭 세션용 관리자 토큰을 변경할 수 있습니다.
+
+Render 계정은 아직 연결되지 않았으며 실제 서버는 생성하지 않았습니다. 무료 서비스에는 휴면/재기동이 있고 무료 PostgreSQL은 30일 뒤 만료됩니다. 유료 플랜으로 자동 전환하지 않습니다. 공식 문서: https://render.com/docs/free
+
+연결 준비 회귀 검증: Python 16개와 JavaScript 28개 통과. PostgreSQL URL 드라이버 선택과 CORS/인증은 검증했으며 PostgreSQL 실서버 접속은 계정 연결 후 확인해야 합니다.

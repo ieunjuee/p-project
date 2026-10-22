@@ -22,3 +22,17 @@ test('AURA control center renders API counts and escapes review data',async()=>{
  assert.equal(dom.window.document.querySelectorAll('main script').length,0);
  dom.window.close();
 });
+
+test('deployed API address is used and connection settings remain accessible',async()=>{
+ const dom=new JSDOM(fs.readFileSync('dist/index.html','utf8'),{url:'https://example.test/',runScripts:'outside-only'});
+ const seen=[];
+ dom.window.AURA_CONFIG={apiBase:'https://api.example.test'};
+ dom.window.fetch=async path=>{seen.push(path);return {ok:true,json:async()=>path.endsWith('/api/health')?{dataset:null,llm_configured:false}:path.includes('/api/investigations')?[]:{total:0,closed_auto:0,needs_review:0,running:0,errors:0,safety_blocks:0}};};
+ dom.window.eval(fs.readFileSync('dist/aura.js','utf8'));
+ await new Promise(r=>setTimeout(r,20));
+ assert.ok(seen.includes('https://api.example.test/api/health'));
+ dom.window.document.querySelector('#connection-settings').click();
+ assert.equal(dom.window.document.querySelector('#api-base').value,'https://api.example.test');
+ assert.ok(dom.window.document.querySelector('#admin-token'));
+ dom.window.close();
+});
