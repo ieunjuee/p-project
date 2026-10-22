@@ -120,3 +120,33 @@ def test_evaluation_values_do_not_fit_model(db):
     after = Analysis(db, cfg)
     assert after.med_baseline == baseline
     assert {pid: after.compute(pid) for pid in tuning} == expected
+
+
+def test_agent_workflow_verification_gate_and_failures(db):
+    from backend.agent import Investigator, investigate, verify
+    a = Analysis(db, load_config())
+    pid = db.scalar(select(ScenarioLabel.person_id).where(ScenarioLabel.duplicate.is_(True)))
+    result = investigate(db,a,pid)
+    assert result["verification"]["passed"]
+    assert result["gate"]["route"] == "detailed_review"
+    assert not result["gate"]["payment_approved"]
+    runner = Investigator(a,pid)
+    report = runner.run()
+    report["claims"][0]["text"] = "허위 금액 999999999"
+    assert not verify(db,runner,report)["passed"]
+    with pytest.raises(ValueError): runner.tool("approve_payment")
+    class Broken:
+        def complete(self,*args): raise ConnectionError()
+    failed = investigate(db,a,pid,Broken())
+    assert failed["gate"]["status"] == "needs_review"
+    assert failed["error"] == "ConnectionError"
+
+
+def test_safe_auto_close_and_tool_cache(db):
+    from backend.agent import Investigator, investigate
+    a = Analysis(db,load_config())
+    results = [investigate(db,a,pid,persist=False) for pid in a.people]
+    assert any(r["gate"]["status"] == "closed_auto" for r in results)
+    runner = Investigator(a,next(iter(a.people)))
+    runner.tool("get_profile"); runner.tool("get_profile")
+    assert runner.logs[-1]["status"] == "cached"
