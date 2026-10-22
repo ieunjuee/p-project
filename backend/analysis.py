@@ -16,7 +16,7 @@ def record(row):
 def overall(med, auto, cross):
     if any(not isinstance(x, (int, float)) or not 0 <= x <= 100 for x in (med, auto, cross)):
         raise ValueError("점수는 0~100의 유한한 수여야 합니다.")
-    return round(max(cross, .3 * med + .3 * auto + .4 * cross), 4)
+    return round(float(max(cross, .3 * med + .3 * auto + .4 * cross)), 4)
 
 
 def max_window(dates, days):
@@ -137,11 +137,11 @@ class Analysis:
             # Percentile only above training median. Equal values have zero anomaly contribution.
             ml = max(0, (sum(x < value - 1e-12 for x in reference) / len(reference) - .5) * 200)
         weight = self.config["model"]["rule_weight"] if enabled else 1
-        score = round(min(100, weight * rule + (1 - weight) * ml), 4)
+        score = round(float(min(100, weight * rule + (1 - weight) * ml)), 4)
         if not (self.med[pid] if domain == "med" else self.accidents[pid]):
             score = 0
         ids = [f"MED:{r.id}" for r in self.med[pid]] if domain == "med" else [f"ACC:{r.id}" for r in self.accidents[pid]] + [f"AUTO:{r.id}" for r in self.auto[pid]]
-        result = {"score": score, "rule_score": rule, "model_score": round(ml, 4), "model_enabled": enabled, "fit_partition": "tuning", "signals": signals, "evidence_ids": ids, "baseline": {"|".join(k): v for k,v in self.med_baseline.items()} if domain == "med" else self.repair_baseline}
+        result = {"score": score, "rule_score": rule, "model_score": round(float(ml), 4), "model_enabled": enabled, "fit_partition": "tuning", "signals": signals, "evidence_ids": ids, "baseline": {"|".join(k): v for k,v in self.med_baseline.items()} if domain == "med" else self.repair_baseline}
         self.cache[key] = result
         return result
 

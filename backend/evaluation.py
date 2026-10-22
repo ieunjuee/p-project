@@ -26,16 +26,16 @@ def evaluate(session, analysis, provider=None, limit=200):
                     reply = provider.complete([{"role":"user","content":"도구 없이 전체 원시 청구를 판단하라. JSON {route: fast_candidate/general_review/detailed_review/unable_to_determine, claims: [], duplicate: boolean}.\n"+json.dumps(raw,ensure_ascii=False)}],[])
                     final = reply["final"]
                     if final.get("route") not in {"fast_candidate","general_review","detailed_review","unable_to_determine"}: raise ValueError("route")
-                    row = {"pid":pid,"route":final["route"],"input_tokens":reply.get("input_tokens"),"verified":None,"citation":None,"consistent":None}
+                    row = {"pid":pid,"route":final["route"],"report":final,"input_tokens":reply.get("input_tokens"),"verified":None,"citation":None,"consistent":None}
                 elif name == "B":
                     scores,dup=analysis.compute(pid),analysis.duplicate(pid)
                     gate=safety_gate(scores,dup,True,config=analysis.config)
                     row={"pid":pid,**gate,"input_tokens":0,"verified":None,"citation":None,"consistent":None}
                 else:
                     runs=[investigate(session,analysis,pid,provider,persist=False) for _ in range(5)]
-                    signatures=[(r["gate"]["route"],tuple(sorted(c.get("text","") for c in r["report"].get("claims",[])))) for r in runs]
+                    signatures=[(r["gate"]["route"],tuple(sorted(set(e for c in r["report"].get("claims",[]) for e in c.get("evidence_ids",[]))))) for r in runs]
                     r=runs[0]
-                    row={"pid":pid,"route":r["gate"]["route"],"input_tokens":r["input_tokens"],"verified":r["verification"]["passed"],"citation":sum(bool(c.get("evidence_ids")) for c in r["report"].get("claims",[]))/max(1,len(r["report"].get("claims",[]))),"consistent":len(set(signatures)) == 1}
+                    row={"pid":pid,"route":r["gate"]["route"],"report":r["report"],"input_tokens":r["input_tokens"],"verified":r["verification"]["passed"],"citation":sum(bool(c.get("evidence_ids")) for c in r["report"].get("claims",[]))/max(1,len(r["report"].get("claims",[]))),"consistent":len(set(signatures)) == 1}
                     if not row["consistent"]: row["route"]="unable_to_determine"
                 row["seconds"]=(perf_counter()-started)/(5 if name == "C" else 1)
             except Exception as exc:

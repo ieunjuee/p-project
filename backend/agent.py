@@ -26,7 +26,7 @@ class Provider:
 
     def complete(self, messages, tools):
         with httpx.Client(timeout=30) as client:
-            response = client.post(self.base + "/responses", headers={"Authorization": "Bearer " + self.key}, json={"model": self.model, "instructions": INSTRUCTIONS, "input": messages, "tools": tools, "store": False})
+            response = client.post(self.base + "/responses", headers={"Authorization": "Bearer " + self.key}, json={"model": self.model, "instructions": INSTRUCTIONS if tools else "Return only the user requested raw-baseline JSON. Do not execute decisions.", "input": messages, "tools": tools, "store": False})
             response.raise_for_status()
             data = response.json()
         calls = [{"id": r["call_id"], "name": r["name"], "args": json.loads(r["arguments"])} for r in data.get("output", []) if r["type"] == "function_call"]

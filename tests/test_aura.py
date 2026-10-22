@@ -150,3 +150,21 @@ def test_safe_auto_close_and_tool_cache(db):
     runner = Investigator(a,next(iter(a.people)))
     runner.tool("get_profile"); runner.tool("get_profile")
     assert runner.logs[-1]["status"] == "cached"
+
+
+def test_actual_tool_call_protocol_with_mock_provider(db):
+    from backend.agent import Investigator, TOOLS, investigate
+    a=Analysis(db,load_config()); pid=next(iter(a.people))
+    report=Investigator(a,pid).run()
+    class Mock:
+        turns=0
+        def complete(self,messages,tools):
+            self.turns+=1
+            assert len(tools)==7
+            if self.turns==1:
+                return {"calls":[{"id":str(i),"name":n,"args":{}} for i,n in enumerate(TOOLS[:6])],"output":[],"input_tokens":100}
+            assert sum(m.get("type")=="function_call_output" for m in messages)==6
+            return {"calls":[],"final":report,"input_tokens":200}
+    result=investigate(db,a,pid,Mock())
+    assert result["mode"]=="tool_calling" and result["verification"]["passed"]
+    assert result["input_tokens"]==300
