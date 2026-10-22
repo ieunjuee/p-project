@@ -7,7 +7,7 @@ const folder=path.resolve(__dirname,'../dist');
 const tick=()=>new Promise(resolve=>setTimeout(resolve,35));
 async function openApp(){
   const errors=[],console=new VirtualConsole();console.on('jsdomError',e=>errors.push(e.message));
-  const dom=new JSDOM(fs.readFileSync(path.join(folder,'index.html'),'utf8'),{url:'https://example.test/p-project/dist/index.html',runScripts:'outside-only',virtualConsole:console});
+  const dom=new JSDOM(fs.readFileSync(path.join(folder,'legacy.html'),'utf8'),{url:'https://example.test/p-project/dist/index.html',runScripts:'outside-only',virtualConsole:console});
   const w=dom.window;w.scrollTo=()=>{};w.print=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
   w.URL.createObjectURL=()=> 'blob:unit-test';w.URL.revokeObjectURL=()=>{};

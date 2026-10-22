@@ -2,7 +2,7 @@ name: Check InsureLens
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/aura-pdf-implementation]
   pull_request:
   workflow_dispatch:
 
@@ -24,7 +24,14 @@ jobs:
           node --check dist/charts.js
           node --check server.mjs
           node --check llm.mjs
+          node --check dist/aura.js
       - name: Install test-only dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run analysis, chart and UI tests
         run: npm test
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Run relational analysis and API tests
+        run: python -m pytest tests/test_aura.py tests/test_aura_api.py -q

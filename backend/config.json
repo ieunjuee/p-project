@@ -1,0 +1,97 @@
+{
+  "spec_status": "PDF_REVIEWED",
+  "spec_note": "PDF 2026-10-22 8쪽 기준. 임계값·시나리오 비율·D·Overall은 원문 반영. PDF가 수치로 정하지 않은 영역 가중치, IF 혼합비, 교차 점수 변환은 실험 설정.",
+  "generation": {
+    "people": 500,
+    "med_claims": 5000,
+    "accidents": 600,
+    "tuning_fraction": 0.6,
+    "scenarios": {
+      "normal": 0.6,
+      "normal_split": 0.08,
+      "frequent_normal": 0.07,
+      "duplicate": 0.06,
+      "nondisclosure": 0.05,
+      "repeated_minor": 0.05,
+      "excessive_treatment": 0.05,
+      "compound": 0.04
+    }
+  },
+  "medical": {
+    "window_days": 30,
+    "visit_count": 8,
+    "short_gap_days": 3,
+    "cost_ratio": 3,
+    "repeat_count": 2,
+    "hospital_count": 3,
+    "weights": [
+      20,
+      15,
+      25,
+      25,
+      15
+    ],
+    "cost_percentile": 0.95
+  },
+  "auto": {
+    "window_days": 90,
+    "accident_count": 3,
+    "short_gap_days": 30,
+    "minor_ratio": 0.8,
+    "repair_ratio": 3,
+    "repeat_count": 2,
+    "weights": [
+      25,
+      15,
+      15,
+      25,
+      20
+    ],
+    "repair_percentile": 0.95
+  },
+  "model": {
+    "seed": 42,
+    "trees": 48,
+    "sample_size": 128,
+    "rule_weight": 0.85,
+    "min_tuning_people": 20
+  },
+  "cross": {
+    "link_days": 30,
+    "confirmed_score": 90,
+    "suspected_score": 65,
+    "unknown_score": 30,
+    "duplicate_formula": "sum(min(auto_paid, med_paid)) over disjoint matched cost pools",
+    "ratio_denominator": "sum accident-related medical paid_amount",
+    "amount_tolerance": 0.05,
+    "prior_days": 90,
+    "ratio_weight": 80,
+    "disclosure_weight": 15,
+    "preexisting_weight": 10
+  },
+  "routing": {
+    "fast_below": 30,
+    "review_at": 60,
+    "weights": [
+      0.3,
+      0.3,
+      0.4
+    ]
+  },
+  "agent": {
+    "max_rounds": 10,
+    "max_tool_calls": 12,
+    "claims_limit": 12,
+    "timeout_seconds": 30
+  },
+  "targets": {
+    "duplicate_recall": 0.9,
+    "risky_fast_rate": 0.02,
+    "confusing_normal_false_positive": 0.15,
+    "numeric_accuracy": 1.0,
+    "citation_rate": 0.95,
+    "repeat_consistency": 0.9,
+    "input_token_ratio_vs_A": 0.5,
+    "seconds_per_person": 60
+  }
+}

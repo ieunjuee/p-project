@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: aura
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes: [aura-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U aura"]
+      interval: 5s
+      retries: 10
+  api:
+    build: .
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://aura:${POSTGRES_PASSWORD}@db/aura
+      AURA_ADMIN_TOKEN: ${AURA_ADMIN_TOKEN:?set AURA_ADMIN_TOKEN}
+      AURA_ALLOWED_ORIGINS: ${AURA_ALLOWED_ORIGINS:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AURA_LLM_MODEL: ${AURA_LLM_MODEL:-}
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  aura-db:
