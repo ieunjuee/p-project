@@ -36,6 +36,16 @@ def create_app(url=None, config=None, provider=None):
         app.state.engine, app.state.factory = engine, factory
         app.state.lock = threading.Lock()
         app.state.config, app.state.provider = config, provider or configured_provider()
+        # Explicit opt-in: seed a new demo database once; preserve existing data.
+        # Bootstrap uses the deterministic workflow and never incurs LLM calls.
+        if os.getenv("AURA_BOOTSTRAP_DEMO", "").lower() == "true":
+            with factory() as db:
+                if db.scalar(select(Person.id).limit(1)) is None:
+                    generate(db, config)
+                    analysis = Analysis(db, config)
+                    for pid in sorted(analysis.people):
+                        investigate(db, analysis, pid)
+                    db.commit()
         yield
         engine.dispose()
 
