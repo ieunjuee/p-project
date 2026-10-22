@@ -42,6 +42,7 @@ class Analysis:
         for cls, target in ((MedClaim, self.med), (AutoClaim, self.auto), (AutoAccident, self.accidents)):
             for row in session.scalars(select(cls).order_by(cls.id)):
                 target[row.person_id].append(row)
+        self.body_parts = {k.code:k.body_part for k in session.scalars(select(KCD))}
         self.injury = {k.code for k in session.scalars(select(KCD).where(KCD.injury.is_(True)))}
         costs = defaultdict(list)
         repairs = []
@@ -158,8 +159,7 @@ class Analysis:
                 treatments = [c for c in self.auto[pid] if c.accident_id == a.id and c.component == "treatment"]
                 same_hospital = any(c.hospital_id == m.hospital_id for c in treatments)
                 overlap = any(max(c.service_date, m.service_date) <= min(c.treatment_end, m.treatment_end) for c in treatments)
-                if True:
-                    links.append({"med_id": m.id, "accident_id": a.id, "day_gap": gap, "injury_kcd": m.kcd_code, "same_hospital": same_hospital, "treatment_overlap": overlap, "evidence_ids": [f"MED:{m.id}", f"ACC:{a.id}"] + [f"AUTO:{c.id}" for c in treatments]})
+                links.append({"med_id": m.id, "accident_id": a.id, "day_gap": gap, "injury_kcd": m.kcd_code, "same_hospital": same_hospital, "treatment_overlap": overlap, "evidence_ids": [f"MED:{m.id}", f"ACC:{a.id}"] + [f"AUTO:{c.id}" for c in treatments]})
         return {"links": links, "count": len(links), "evidence_ids": sorted({e for l in links for e in l["evidence_ids"]})}
 
     def duplicate(self, pid):
@@ -202,7 +202,7 @@ class Analysis:
         for l in linked["links"]:
             acc=next(a for a in self.accidents[pid] if a.id == l["accident_id"])
             for m in self.med[pid]:
-                if 0 < (acc.accident_date-m.service_date).days <= self.config["cross"]["prior_days"] and m.kcd_code == l["injury_kcd"]:
+                if 0 < (acc.accident_date-m.service_date).days <= self.config["cross"]["prior_days"] and self.body_parts.get(m.kcd_code) == self.body_parts.get(l["injury_kcd"]):
                     preexisting.add(m.id)
         ratio=total_d/denominator if denominator else 0
         cfg=self.config["cross"]

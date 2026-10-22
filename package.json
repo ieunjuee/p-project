@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000",
-    "test": "node --test tests/engine.test.cjs tests/charts.test.cjs tests/ui.test.cjs",
+    "test": "node --test tests/engine.test.cjs tests/charts.test.cjs tests/ui.test.cjs tests/aura-ui.test.cjs",
     "start:legacy": "node server.mjs",
     "test:backend": "python -m pytest tests/test_aura.py tests/test_aura_api.py -q"
   },

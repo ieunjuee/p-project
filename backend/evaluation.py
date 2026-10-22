@@ -32,7 +32,7 @@ def evaluate(session, analysis, provider=None, limit=200):
                     gate=safety_gate(scores,dup,True,config=analysis.config)
                     row={"pid":pid,**gate,"input_tokens":0,"verified":None,"citation":None,"consistent":None}
                 else:
-                    runs=[investigate(session,analysis,pid,provider,persist=False) for _ in range(5)]
+                    runs=[investigate(session,analysis,pid,provider,persist=False,repeat_check=False) for _ in range(5)]
                     signatures=[(r["gate"]["route"],tuple(sorted(set(e for c in r["report"].get("claims",[]) for e in c.get("evidence_ids",[]))))) for r in runs]
                     r=runs[0]
                     row={"pid":pid,"route":r["gate"]["route"],"report":r["report"],"input_tokens":r["input_tokens"],"verified":r["verification"]["passed"],"citation":sum(bool(c.get("evidence_ids")) for c in r["report"].get("claims",[]))/max(1,len(r["report"].get("claims",[]))),"consistent":len(set(signatures)) == 1}
@@ -47,6 +47,12 @@ def evaluate(session, analysis, provider=None, limit=200):
             values=[r[field] for r in rows if r.get(field) is not None]
             groups[name]["metrics"][key]=sum(values)/len(values) if values else None
         groups[name]["target_results"]={key:None if value is None else value <= analysis.config["targets"][key] if key in {"risky_fast_rate","confusing_normal_false_positive","seconds_per_person"} else value >= analysis.config["targets"][key] for key,value in groups[name]["metrics"].items() if key in analysis.config["targets"]}
+    if groups["A"].get("status") == "completed" and groups["C"].get("status") == "completed":
+        at=groups["A"]["metrics"]["input_tokens"]
+        ct=groups["C"]["metrics"]["input_tokens"]
+        groups["C"]["metrics"]["input_token_ratio_vs_A"]=ct/at if at and ct is not None else None
+        ratio=groups["C"]["metrics"]["input_token_ratio_vs_A"]
+        groups["C"]["target_results"]["input_token_ratio_vs_A"]=ratio <= analysis.config["targets"]["input_token_ratio_vs_A"] if ratio is not None else None
     result={"partition":"evaluation","people":ids,"groups":groups,"targets":analysis.config["targets"],"note":"목표는 PDF 초안. A/C 미실행은 성능 0 또는 달성으로 표시하지 않음. 수치 정확도는 C의 검증 통과 보고서 비율."}
     session.add(Evaluation(result=result));audit(session,"evaluation_completed",{"n":len(ids),"groups":{k:v["status"] for k,v in groups.items()}})
     return result

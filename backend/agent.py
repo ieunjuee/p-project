@@ -120,6 +120,7 @@ class Investigator:
 
 def verify(session, investigator, report):
     checks = []
+    numeric_total, numeric_correct = 0, 0
     for cls in (MedClaim,AutoClaim,AutoAccident):
         actual = [dict(r) for r in session.execute(select(*cls.__table__.columns).where(cls.person_id == investigator.pid).order_by(cls.id)).mappings()]
         actual = [{k:v.isoformat() if hasattr(v,"isoformat") else v for k,v in r.items()} for r in actual]
@@ -138,15 +139,17 @@ def verify(session, investigator, report):
             valid &= fact.get("tool") in citations and value is not None and value == fact.get("value")
             allowed.extend(re.findall(r"\d{4}-\d{2}-\d{2}|\d+(?:\.\d+)?",str(value)))
         numbers = re.findall(r"\d{4}-\d{2}-\d{2}|\d+(?:\.\d+)?",claim.get("text", ""))
+        numeric_total += len(numbers)
+        numeric_correct += sum(n in allowed and valid for n in numbers)
         valid &= all(n in allowed for n in numbers)
         checks.append({"check":"claim_facts_and_citations", "passed": bool(valid)})
     scores = investigator.outputs.get("compute_overall", {})
     if scores:
         checks.append({"check":"Overall recompute", "passed":scores["S_overall"] == overall(scores["S_med"],scores["S_auto"],scores["S_cross"])})
-    return {"passed":bool(report.get("claims")) and all(c["passed"] for c in checks),"checks":checks}
+    return {"passed":bool(report.get("claims")) and all(c["passed"] for c in checks),"checks":checks,"numeric_total":numeric_total,"numeric_correct":numeric_correct}
 
 
-def investigate(session, analysis, pid, provider=None, persist=True):
+def investigate(session, analysis, pid, provider=None, persist=True, repeat_check=True):
     started = perf_counter()
     runner = Investigator(analysis, pid, provider)
     error = None
@@ -163,6 +166,16 @@ def investigate(session, analysis, pid, provider=None, persist=True):
     forbidden = runner.blocked or bool(report.get("proposed_actions")) or any(re.search("지급.*(?:승인|거절|보류)|사기 확정",c.get("text", "")) for c in report.get("claims", []))
     gate = safety_gate(scores, duplicate, validation["passed"], missing, bool(error), forbidden, config=analysis.config)
     result = {"person_id":pid,"mode":"tool_calling" if provider else "deterministic_workflow", "scores":scores,"duplicate":duplicate,"report":report,"verification":validation,"gate":gate,"logs":runner.logs,"input_tokens":runner.tokens,"error":error,"spec_status":analysis.config["spec_status"]}
+    if provider and repeat_check:
+        repeats = [result] + [investigate(session,analysis,pid,provider,persist=False,repeat_check=False) for _ in range(4)]
+        def signature(r):
+            return (r["gate"]["route"],tuple(sorted((c.get("signal") or c.get("text","") if not c.get("facts") else "",tuple(sorted((f.get("tool",""),f.get("field",""),str(f.get("value"))) for f in c.get("facts",[])))) for c in r["report"].get("claims",[]))))
+        consistent = len({signature(r) for r in repeats}) == 1
+        result["repeat_check"]={"runs":5,"consistent":consistent}
+        if not consistent:
+            result["gate"] = safety_gate(scores,duplicate,validation["passed"],missing,bool(error),forbidden,conflict=True,config=analysis.config)
+            gate=result["gate"]
+        result["input_tokens"]=sum(r["input_tokens"] for r in repeats) if all(r["input_tokens"] is not None for r in repeats) else None
     if persist:
         row = Investigation(person_id=pid,route=gate["route"],status=gate["status"],result=result,duration_ms=round((perf_counter()-started)*1000))
         session.add(row)

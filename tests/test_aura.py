@@ -165,6 +165,6 @@ def test_actual_tool_call_protocol_with_mock_provider(db):
                 return {"calls":[{"id":str(i),"name":n,"args":{}} for i,n in enumerate(TOOLS[:6])],"output":[],"input_tokens":100}
             assert sum(m.get("type")=="function_call_output" for m in messages)==6
             return {"calls":[],"final":report,"input_tokens":200}
-    result=investigate(db,a,pid,Mock())
+    result=investigate(db,a,pid,Mock(),repeat_check=False)
     assert result["mode"]=="tool_calling" and result["verification"]["passed"]
     assert result["input_tokens"]==300
