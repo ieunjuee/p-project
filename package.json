@@ -8,7 +8,7 @@
  },
  "scripts": {
   "start": "node server.mjs",
-  "test": "node --test tests/engine.test.cjs tests/charts.test.cjs tests/ui.test.cjs tests/person-engine.test.cjs tests/person-sql.test.cjs tests/person-llm.test.mjs",
+  "test": "node --test tests/engine.test.cjs tests/charts.test.cjs tests/ui.test.cjs tests/person-engine.test.cjs tests/person-sql.test.cjs tests/person-llm.test.mjs tests/terms-rag.test.mjs",
   "data": "python3 data/build_db.py",
   "evaluate": "node tools/evaluate.mjs",
   "verify": "python3 tools/verify_sql.py"

@@ -123,7 +123,7 @@ function explanationPanel(r) {
     <span class="badge ${x && x.provider === 'api' ? 'green' : 'gray'}">${x && x.provider === 'api' ? 'LLM 연결' : '데모 설명'}</span></div>
     ${x ? `<div class="ai-result"><h3>01 · 요약</h3><p>${esc(x.summary)}</p>
       <h3>02 · 근거</h3><ul>${x.basis.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>
-      <h3>03 · 확인할 항목</h3><ul>${x.checks.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+      <h3>03 · 확인할 항목</h3><ul>${x.checks.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>${termsBlock(x.terms)}
       <p class="provider">${x.provider === 'api' ? 'LLM이 코드가 만든 근거 JSON을 바탕으로 작성했습니다.' : 'LLM 미연결 · 코드가 계산한 수치로 만든 데모 설명입니다.'}</p></div>
       ${state.verification ? `<div class="info-note ${state.verification.ok ? '' : 'warning'}">수치 검증: ${state.verification.ok
         ? '설명에 나온 모든 숫자와 근거 번호가 코드 계산 결과와 일치합니다.'
@@ -133,6 +133,15 @@ function explanationPanel(r) {
       <button class="button primary" data-action="explain">설명 생성</button></div>`}
     <p class="muted" style="font-size:9px;margin-top:14px;line-height:1.8">LLM은 점수와 위험도를 바꾸지 않습니다. 코드가 정한 결과를 설명만 합니다.</p></section>`;
 }
+
+/* 관련 약관: 조항 이름을 누르면 원문 조각을 펼칩니다(LLM을 거치지 않은 원문). */
+const termsBlock = (terms) => ((terms || []).length ? `<div class="section-gap"><h3>관련 약관</h3>${terms.map((t) => `<details style="margin-top:6px;font-size:11px"><summary style="cursor:pointer">${esc(t.cite)}</summary>
+  <p style="white-space:pre-wrap;line-height:1.8;color:#4b5d52;margin:6px 0 0;max-height:260px;overflow:auto">${esc(t.text)}</p></details>`).join('')}
+  <p class="muted" style="font-size:9px;margin-top:6px">표준약관(보험업감독업무시행세칙 별표15) 원문입니다. 약관은 근거 확인용이며 점수와 결과 제안을 바꾸지 않습니다.</p></div>` : '');
+/** 서버가 함께 보낸 약관 조항까지 넣어 검증합니다. 조항 번호(제4조 등)를 지어낸 숫자로 보지 않게 합니다. */
+/* 브라우저는 서버(LLM_TIMEOUT_MS 기본 120초)보다 오래 기다립니다. 30초면 서버가 아직 LLM을 기다리는 중에 화면이 먼저 데모로 바뀝니다. */
+const LLM_WAIT_MS = 130000;
+const verifyWithTerms = (payload, result) => E.verifyExplanation({ ...payload, terms: result.terms || [] }, result);
 
 const assistBadge = (x) => `<span class="badge ${x.result.provider === 'api' ? 'green' : 'gray'}">${x.result.provider === 'api' ? 'LLM 연결' : '데모 답변'}</span>`;
 const assistCheck = (x) => (x.check && !x.check.ok ? `<div class="info-note warning">수치 검증에서 코드 계산에 없는 값을 발견해 데모 답변으로 대체했습니다.</div>` : '');
@@ -147,7 +156,7 @@ function askPanel(r) {
     ${x ? `<div class="chat-answer"><strong>${esc(x.question)}</strong>
       <p style="font-size:12px;font-weight:650;color:#3f6650;line-height:1.8">${esc(x.result.answer)}</p>
       ${(x.result.points || []).length ? `<ul style="margin:8px 0 0;padding-left:17px">${x.result.points.map((p) => `<li style="margin-bottom:4px">${esc(p)}</li>`).join('')}</ul>` : ''}
-      ${x.result.citations.length ? `<div style="margin-top:10px">${x.result.citations.map((id) => `<span class="tag">${esc(id)}</span>`).join('')}</div>` : ''}</div>${assistCheck(x)}` : ''}
+      ${x.result.citations.length ? `<div style="margin-top:10px">${x.result.citations.map((id) => `<span class="tag">${esc(id)}</span>`).join('')}</div>` : ''}${termsBlock(x.result.terms)}</div>${assistCheck(x)}` : ''}
     <p class="muted" style="font-size:9px;margin-top:12px;line-height:1.8">답은 코드가 계산한 근거 안에서만 만들고, 숫자와 번호는 코드가 다시 확인합니다.</p></section>`;
 }
 
@@ -161,7 +170,7 @@ function requestPanel(r) {
           <div><span style="display:inline-block;width:52px;color:#9aa89e">제목</span><input id="request-subject" value="${esc(x.result.subject || '')}" style="width:calc(100% - 60px);padding:3px 7px;font-size:11px;font-weight:650" aria-label="메일 제목"></div></div>
         <textarea id="request-text" rows="${Math.min(26, String(x.result.message).split('\n').length + 3)}" style="width:100%;border:0;border-radius:0;padding:14px;font-size:12px;line-height:1.9;resize:vertical" aria-label="메일 본문">${esc(x.result.message)}</textarea></div>
       ${(x.result.guarded || []).length ? `<div class="info-note warning">내부 기준이 드러나거나 압박하는 문구가 있어 코드가 기본 문구로 바꿨습니다: ${esc(x.result.guarded.join(', '))}</div>` : ''}
-      <div style="margin-top:12px"><button class="button" data-action="copy-request">메일 전체 복사</button></div></div>${assistCheck(x)}
+      <div style="margin-top:12px"><button class="button" data-action="copy-request">메일 전체 복사</button></div>${termsBlock(x.result.terms)}</div>${assistCheck(x)}
       <button class="button link section-gap" data-action="request">초안 다시 생성</button>`
     : `<div class="ai-placeholder"><p>보류 건에 고객에게 보낼 증빙 요청 이메일을 초안으로 만듭니다.</p>
       <button class="button primary" data-action="request">초안 생성</button></div>`}
@@ -174,7 +183,7 @@ function gapPanel(r) {
   return `<section class="panel ai-panel section-gap"><div class="ai-status"><h2>판단 불가 보완</h2>${x ? assistBadge(x) : ''}</div>
     ${x ? `<div class="ai-result"><p>${esc(x.result.summary)}</p>
       <h3>비어 있는 값</h3><ul>${x.result.missing.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
-      <h3>이렇게 확인하면 판단됩니다</h3><ol style="margin:0;padding-left:20px">${x.result.how.map((m) => `<li>${esc(m)}</li>`).join('')}</ol></div>${assistCheck(x)}
+      <h3>이렇게 확인하면 판단됩니다</h3><ol style="margin:0;padding-left:20px">${x.result.how.map((m) => `<li>${esc(m)}</li>`).join('')}</ol>${termsBlock(x.result.terms)}</div>${assistCheck(x)}
       <button class="button link section-gap" data-action="gap">다시 생성</button>`
     : `<div class="ai-placeholder"><p>영수증 번호가 비어 판단할 수 없는 이유와, 무엇을 확인하면 판단되는지 정리합니다.</p>
       <button class="button primary" data-action="gap">확인할 것 제안</button></div>`}</section>`;
@@ -329,7 +338,7 @@ async function explain() {
     if (!window.INSURELENS_SERVER) throw Error('서버 미연결');
     const response = await fetch('/api/explain-person', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ evidence: payload }), signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ evidence: payload }), signal: AbortSignal.timeout(LLM_WAIT_MS),
     });
     if (!response.ok) throw Error('API 요청 실패');
     result = await response.json();
@@ -338,7 +347,7 @@ async function explain() {
     result = E.demoExplain(payload);
     if (window.INSURELENS_SERVER) toast('LLM 연결에 실패해 데모 설명을 표시합니다.');
   }
-  let check = E.verifyExplanation(payload, result);
+  let check = verifyWithTerms(payload, result);
   if (!check.ok && result.provider === 'api') {
     toast('설명 속 수치가 코드 계산과 달라 데모 설명으로 대체했습니다.');
     const demo = E.demoExplain(payload);
@@ -360,7 +369,7 @@ async function assist(kind, question = '') {
     if (!window.INSURELENS_SERVER) throw Error('서버 미연결');
     const response = await fetch('/api/person-assist', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind, evidence: payload, question }), signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ kind, evidence: payload, question }), signal: AbortSignal.timeout(LLM_WAIT_MS),
     });
     if (!response.ok) throw Error('API 요청 실패');
     result = await response.json();
@@ -368,7 +377,7 @@ async function assist(kind, question = '') {
     result = demo();
     if (window.INSURELENS_SERVER) toast('LLM 연결에 실패해 데모 답변을 표시합니다.');
   }
-  const check = E.verifyExplanation(payload, result);
+  const check = verifyWithTerms(payload, result);
   if (!check.ok && result.provider === 'api') { toast('답변 속 수치가 코드 계산과 달라 데모 답변으로 대체했습니다.'); result = demo(); }
   state.assist[kind] = { result, check, question };
   render();
