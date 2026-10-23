@@ -160,6 +160,7 @@ function requestPanel(r) {
           <div><span style="display:inline-block;width:52px;color:#9aa89e">받는 분</span>고객</div>
           <div><span style="display:inline-block;width:52px;color:#9aa89e">제목</span><input id="request-subject" value="${esc(x.result.subject || '')}" style="width:calc(100% - 60px);padding:3px 7px;font-size:11px;font-weight:650" aria-label="메일 제목"></div></div>
         <textarea id="request-text" rows="${Math.min(26, String(x.result.message).split('\n').length + 3)}" style="width:100%;border:0;border-radius:0;padding:14px;font-size:12px;line-height:1.9;resize:vertical" aria-label="메일 본문">${esc(x.result.message)}</textarea></div>
+      ${(x.result.guarded || []).length ? `<div class="info-note warning">내부 기준이 드러나거나 압박하는 문구가 있어 코드가 기본 문구로 바꿨습니다: ${esc(x.result.guarded.join(', '))}</div>` : ''}
       <div style="margin-top:12px"><button class="button" data-action="copy-request">메일 전체 복사</button></div></div>${assistCheck(x)}
       <button class="button link section-gap" data-action="request">초안 다시 생성</button>`
     : `<div class="ai-placeholder"><p>보류 건에 고객에게 보낼 증빙 요청 이메일을 초안으로 만듭니다.</p>

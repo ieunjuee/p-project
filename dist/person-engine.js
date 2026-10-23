@@ -526,6 +526,41 @@
     return { provider: 'demo', ...draft, message: composeRequest(draft) };
   }
 
+  /** 고객에게 나가는 이메일에 내부 기준이나 압박하는 표현이 섞이지 않게 막는 가드.
+   *  LLM이 지시를 어겨도 이 단계에서 코드가 정한 기본 문구로 바꿉니다.
+   *  바꾼 항목은 guarded에 남깁니다. */
+  function sanitizeRequest(e, r) {
+    const base = demoRequest(e);
+    const internal = /\d|기준|상위|초과|순위|점수|위험|의심|사기|비정상/;
+    const pressure = /필수|반드시|즉시|의심|사기|위험|점수/;
+    const guarded = [];
+    const docs = [], reasons = [];
+    (r.documents || []).slice(0, 10).forEach((d, i) => {
+      const name = String(d || '').trim();
+      if (!name || internal.test(name)) { guarded.push(`서류 ${i + 1} 삭제`); return; }
+      const reason = String(r.reasons?.[i] || '').trim();
+      if (!reason || internal.test(reason)) {
+        guarded.push(`서류 ${i + 1} 사유`);
+        reasons.push(requestReason[name] || '청구 내용을 확인하기 위해 필요합니다.');
+      } else reasons.push(reason);
+      docs.push(name);
+    });
+    if (!docs.length) { docs.push(...base.documents); reasons.push(...base.reasons); guarded.push('서류 목록'); }
+    const pick = (value, fallback, bad, label) => {
+      const v = String(value || '').trim();
+      if (!v || bad.test(v)) { guarded.push(label); return fallback; }
+      return v;
+    };
+    return {
+      subject: pick(r.subject, base.subject, pressure, '제목'),
+      intro: pick(r.intro, base.intro, /기준|상위|초과|순위|점수|위험|의심|사기|비정상/, '연락 사유'),
+      documents: docs,
+      reasons,
+      closing: pick(r.closing, base.closing, pressure, '맺음말'),
+      guarded,
+    };
+  }
+
   /** 판단 불가 건에서 무엇을 확인하면 판단되는지. */
   function demoGap(e) {
     const gaps = e.cross_links.filter((l) => l.verdict === '판정 불가');
@@ -632,7 +667,7 @@
     };
   }
 
-  const api = { defaults, analyzePerson, analyzeAll, assemble, summarize, evidence, decision, demoExplain, demoAsk, demoRequest, composeRequest, demoGap, verifyExplanation, evaluate, profile, buildReference, percentile, money, diffDays };
+  const api = { defaults, analyzePerson, analyzeAll, assemble, summarize, evidence, decision, demoExplain, demoAsk, demoRequest, composeRequest, sanitizeRequest, demoGap, verifyExplanation, evaluate, profile, buildReference, percentile, money, diffDays };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PersonLens = api;
 })(typeof window !== 'undefined' ? window : globalThis);
