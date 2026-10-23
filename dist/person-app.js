@@ -144,8 +144,10 @@ function askPanel(r) {
     <form class="question-form" data-form="ask"><input id="ask-input" placeholder="예: ${esc(chips[0])}" value="${esc(x ? x.question : '')}" aria-label="질문 입력" maxlength="300">
       <button class="button primary" type="submit">질문</button></form>
     <div class="suggestions">${chips.map((c) => `<button class="suggestion" type="button" data-ask="${esc(c)}">${esc(c)}</button>`).join('')}</div>
-    ${x ? `<div class="chat-answer"><strong>${esc(x.question)}</strong>${esc(x.result.answer)}
-      ${x.result.citations.length ? `<div style="margin-top:8px">${x.result.citations.map((id) => `<span class="tag">${esc(id)}</span>`).join('')}</div>` : ''}</div>${assistCheck(x)}` : ''}
+    ${x ? `<div class="chat-answer"><strong>${esc(x.question)}</strong>
+      <p style="font-size:12px;font-weight:650;color:#3f6650;line-height:1.8">${esc(x.result.answer)}</p>
+      ${(x.result.points || []).length ? `<ul style="margin:8px 0 0;padding-left:17px">${x.result.points.map((p) => `<li style="margin-bottom:4px">${esc(p)}</li>`).join('')}</ul>` : ''}
+      ${x.result.citations.length ? `<div style="margin-top:10px">${x.result.citations.map((id) => `<span class="tag">${esc(id)}</span>`).join('')}</div>` : ''}</div>${assistCheck(x)}` : ''}
     <p class="muted" style="font-size:9px;margin-top:12px;line-height:1.8">답은 코드가 계산한 근거 안에서만 만들고, 숫자와 번호는 코드가 다시 확인합니다.</p></section>`;
 }
 
@@ -153,11 +155,14 @@ function requestPanel(r) {
   if (E.decision(r) === '지급') return '';
   const x = state.assist.request;
   return `<section class="panel ai-panel section-gap"><div class="ai-status"><h2>증빙 요청서 초안</h2>${x ? assistBadge(x) : ''}</div>
-    ${x ? `<div class="ai-result"><h3>요청할 서류</h3><ul>${x.result.documents.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>
-      <h3>고객 안내 문장 (수정 가능)</h3><textarea id="request-text" style="width:100%;min-height:150px;font-size:11px" aria-label="안내 문장">${esc(x.result.message)}</textarea>
-      <div class="review-form" style="margin-top:12px;padding:12px"><button class="button" data-action="copy-request">문장 복사</button></div></div>${assistCheck(x)}
+    ${x ? `<div class="ai-result"><div style="border:1px solid #e2eae4;border-radius:9px;overflow:hidden;margin-top:16px">
+        <div style="background:#f4f8f5;padding:11px 14px;font-size:11px;color:#6d8275;border-bottom:1px solid #e2eae4;line-height:2">
+          <div><span style="display:inline-block;width:52px;color:#9aa89e">받는 분</span>고객</div>
+          <div><span style="display:inline-block;width:52px;color:#9aa89e">제목</span><input id="request-subject" value="${esc(x.result.subject || '')}" style="width:calc(100% - 60px);padding:3px 7px;font-size:11px;font-weight:650" aria-label="메일 제목"></div></div>
+        <textarea id="request-text" rows="${Math.min(26, String(x.result.message).split('\n').length + 3)}" style="width:100%;border:0;border-radius:0;padding:14px;font-size:12px;line-height:1.9;resize:vertical" aria-label="메일 본문">${esc(x.result.message)}</textarea></div>
+      <div style="margin-top:12px"><button class="button" data-action="copy-request">메일 전체 복사</button></div></div>${assistCheck(x)}
       <button class="button link section-gap" data-action="request">초안 다시 생성</button>`
-    : `<div class="ai-placeholder"><p>보류 건에 고객에게 요청할 서류와 안내 문장을 초안으로 만듭니다.</p>
+    : `<div class="ai-placeholder"><p>보류 건에 고객에게 보낼 증빙 요청 이메일을 초안으로 만듭니다.</p>
       <button class="button primary" data-action="request">초안 생성</button></div>`}
     <p class="muted" style="font-size:9px;margin-top:12px;line-height:1.8">초안입니다. 담당자가 확인하고 직접 보냅니다. 시스템은 고객에게 아무것도 보내지 않습니다.</p></section>`;
 }
@@ -168,7 +173,7 @@ function gapPanel(r) {
   return `<section class="panel ai-panel section-gap"><div class="ai-status"><h2>판단 불가 보완</h2>${x ? assistBadge(x) : ''}</div>
     ${x ? `<div class="ai-result"><p>${esc(x.result.summary)}</p>
       <h3>비어 있는 값</h3><ul>${x.result.missing.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
-      <h3>이렇게 확인하면 판단됩니다</h3><ul>${x.result.how.map((m) => `<li>${esc(m)}</li>`).join('')}</ul></div>${assistCheck(x)}
+      <h3>이렇게 확인하면 판단됩니다</h3><ol style="margin:0;padding-left:20px">${x.result.how.map((m) => `<li>${esc(m)}</li>`).join('')}</ol></div>${assistCheck(x)}
       <button class="button link section-gap" data-action="gap">다시 생성</button>`
     : `<div class="ai-placeholder"><p>영수증 번호가 비어 판단할 수 없는 이유와, 무엇을 확인하면 판단되는지 정리합니다.</p>
       <button class="button primary" data-action="gap">확인할 것 제안</button></div>`}</section>`;
@@ -379,8 +384,8 @@ document.addEventListener('click', (ev) => {
   if (el.dataset.action === 'gap') assist('gap');
   if (el.dataset.ask) assist('ask', el.dataset.ask);
   if (el.dataset.action === 'copy-request') {
-    const text = $('#request-text')?.value || '';
-    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('안내 문장을 복사했습니다.'), () => toast('복사에 실패했습니다. 문장을 직접 선택해 복사하세요.'));
+    const text = `제목: ${$('#request-subject')?.value || ''}\n\n${$('#request-text')?.value || ''}`;
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('메일 제목과 본문을 복사했습니다.'), () => toast('복사에 실패했습니다. 본문을 직접 선택해 복사하세요.'));
   }
   if (el.dataset.action === 'print') window.print();
 });

@@ -434,34 +434,70 @@
     '판정 불가': '영수증 번호가 단순히 입력되지 않았을 수 있습니다.',
   };
 
-  /** 담당자 질문에 대한 데모 답변. 근거 JSON의 값만 사용하고 질문 종류를 단어로 구분합니다. */
+  /** 담당자 질문에 대한 데모 답변. 근거 JSON의 값만 사용하고 질문 종류를 단어로 구분합니다.
+   *  answer는 결론 한두 문장, points는 근거를 한 줄씩 나눈 목록입니다. */
   function demoAsk(e, question = '') {
     const q = String(question);
     const hits = hitSignals(e);
     const links = flaggedLinks(e);
     const base = demoExplain(e);
-    let answer;
+    let answer, points = [];
     if (/정상|억울|문제\s*없|아닐/.test(q)) {
-      const reasons = unique([
+      points = unique([
         ...hits.map((s) => legit[s.id]),
         ...links.map((l) => legitVerdict[l.verdict]),
       ].filter(Boolean));
-      answer = reasons.length
-        ? `정상일 수 있는 이유: ${reasons.join(' ')} 다만 확인되기 전에는 위험도를 낮추지 않습니다.`
+      answer = points.length
+        ? '정상일 수 있는 이유가 있습니다. 다만 확인되기 전에는 위험도를 낮추지 않습니다.'
         : '걸린 항목이 없어 정상 범위로 봅니다.';
     } else if (/확인|서류|증빙|무엇|뭘|어떻게/.test(q)) {
-      answer = `확인할 항목: ${base.checks.join(' ')}`;
+      answer = '아래 항목을 확인하세요.';
+      points = base.checks;
     } else if (/점수|몇\s*점|계산/.test(q)) {
-      answer = `의료 점수 ${e.scores.medical}점, 자동차 점수 ${e.scores.auto}점이고 종합은 둘 중 큰 값인 ${e.scores.overall}점입니다. 중복 확실은 점수와 상관없이 높음입니다.`;
+      answer = `종합 점수는 ${e.scores.overall}점입니다. 의료와 자동차 점수 중 큰 값입니다.`;
+      points = [`의료 점수 ${e.scores.medical}점`, `자동차 점수 ${e.scores.auto}점`, '중복 확실은 점수와 상관없이 높음입니다.'];
     } else {
-      answer = `결과는 ${e.decision}입니다. ${e.risk_reason} 근거: ${base.basis.join(' / ')}`;
+      answer = `결과는 ${e.decision}입니다. ${e.risk_reason}`;
+      points = base.basis;
     }
-    return { provider: 'demo', answer, citations: citeIds(e).slice(0, 8) };
+    return { provider: 'demo', answer, points, citations: citeIds(e).slice(0, 8) };
   }
 
-  /** 보류 건에 고객에게 요청할 서류와 안내 문장 초안. 담당자가 확인한 뒤 발송합니다. */
+  /** 증빙 요청서 이메일 본문을 조립합니다. 인사말과 끝인사는 코드가 붙이고,
+   *  서류 번호는 숫자 검증에 걸리지 않도록 동그라미 숫자로 붙입니다. */
+  function composeRequest(r) {
+    const circled = '①②③④⑤⑥⑦⑧⑨⑩';
+    const docs = r.documents || [], reasons = r.reasons || [];
+    const lines = ['안녕하세요.', '', String(r.intro || '').trim(), '', '[ 요청 서류 ]'];
+    docs.forEach((d, i) => {
+      lines.push(`${circled[i] || '-'} ${d}`);
+      if (reasons[i]) lines.push(`   - ${reasons[i]}`);
+    });
+    lines.push('', String(r.closing || '').trim(), '', '감사합니다.');
+    return lines.join('\n');
+  }
+
+  const requestReason = {
+    '두 청구의 영수증 원본': '청구 내용과 영수증을 대조하기 위해 필요합니다.',
+    '진료비 세부내역서': '진료비 항목과 금액을 확인하기 위해 필요합니다.',
+    '다른 보험에서 지급받은 내역 확인서': '같은 비용이 다른 보험에서 지급되었는지 확인하기 위해 필요합니다.',
+    '치료 기간을 확인할 수 있는 진료확인서': '치료 기간과 횟수를 확인하기 위해 필요합니다.',
+    '초진 경위가 적힌 진료기록 사본': '첫 진료가 어떤 경위로 이루어졌는지 확인하기 위해 필요합니다.',
+    '사고와 진료의 관련 여부 확인서': '진료가 사고와 관련된 것인지 확인하기 위해 필요합니다.',
+    '빠진 영수증 사본': '영수증 번호가 확인되지 않아 청구 내용을 대조하기 위해 필요합니다.',
+    '사고 전 같은 부위 진료기록': '사고 이전의 진료 내역을 확인하기 위해 필요합니다.',
+    '치료 계획이 적힌 진료기록부': '진료 횟수가 치료 계획에 따른 것인지 확인하기 위해 필요합니다.',
+    '병원을 옮긴 사유가 적힌 진료의뢰서': '병원을 옮기신 사유를 확인하기 위해 필요합니다.',
+    '치료 기간 소견이 적힌 진단서': '치료에 필요한 기간에 대한 의사 소견을 확인하기 위해 필요합니다.',
+    '각 사고의 경위서': '각 사고의 경위를 확인하기 위해 필요합니다.',
+    '수리 견적서와 작업 내역서': '수리 내용과 비용을 확인하기 위해 필요합니다.',
+    '청구 내용을 확인할 수 있는 진료기록 사본': '청구 내용을 확인하기 위해 필요합니다.',
+  };
+
+  /** 보류 건에 고객에게 보낼 증빙 요청 이메일 초안. 담당자가 확인한 뒤 발송합니다.
+   *  documents는 서류 이름, reasons는 같은 순서의 필요한 이유, message는 조립된 본문입니다. */
   function demoRequest(e) {
-    if (e.decision === '지급') return { provider: 'demo', documents: [], message: '지급 판단이어서 추가 서류가 필요하지 않습니다.' };
+    if (e.decision === '지급') return { provider: 'demo', subject: '', documents: [], reasons: [], message: '지급 판단이어서 추가 서류가 필요하지 않습니다.' };
     const docs = [];
     const add = (t) => { if (!docs.includes(t)) docs.push(t); };
     const verdicts = e.cross_links.map((l) => l.verdict);
@@ -480,11 +516,14 @@
     }
     if (!docs.length) add('청구 내용을 확인할 수 있는 진료기록 사본');
     const ids = citeIds(e).slice(0, 5);
-    const message = ['안녕하세요.',
-      `보험금 청구 건${ids.length ? `(${ids.join(', ')})` : ''}을 확인하던 중 아래 서류가 추가로 필요해 요청드립니다.`,
-      ...docs.map((d) => `- ${d}`),
-      '서류를 확인한 뒤 지급 여부를 안내드리겠습니다. 궁금한 점은 담당자에게 문의해 주세요.'].join('\n');
-    return { provider: 'demo', documents: docs, message };
+    const draft = {
+      subject: '[보험금 청구] 추가 서류 제출 안내',
+      intro: `보험금 청구 건${ids.length ? `(${ids.join(', ')})` : ''}을 확인하던 중 아래 서류가 추가로 필요해 연락드립니다.`,
+      documents: docs,
+      reasons: docs.map((d) => requestReason[d] || ''),
+      closing: '서류를 확인한 뒤 지급 여부를 안내드리겠습니다. 궁금한 점은 담당자에게 문의해 주세요.',
+    };
+    return { provider: 'demo', ...draft, message: composeRequest(draft) };
   }
 
   /** 판단 불가 건에서 무엇을 확인하면 판단되는지. */
@@ -593,7 +632,7 @@
     };
   }
 
-  const api = { defaults, analyzePerson, analyzeAll, assemble, summarize, evidence, decision, demoExplain, demoAsk, demoRequest, demoGap, verifyExplanation, evaluate, profile, buildReference, percentile, money, diffDays };
+  const api = { defaults, analyzePerson, analyzeAll, assemble, summarize, evidence, decision, demoExplain, demoAsk, demoRequest, composeRequest, demoGap, verifyExplanation, evaluate, profile, buildReference, percentile, money, diffDays };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PersonLens = api;
 })(typeof window !== 'undefined' ? window : globalThis);
