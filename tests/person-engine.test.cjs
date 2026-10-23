@@ -139,6 +139,10 @@ test('설명 검증기는 지어낸 수치와 번호를 잡는다', () => {
   assert.equal(bad.ok, false);
   assert.deepEqual(bad.badIds, ['M99999']);
   assert.ok(bad.badNumbers.includes('77'));
+  // 코드가 정한 결정과 다른 결과 제안 이름을 쓰면 무효 처리합니다.
+  const wrongTerm = E.verifyExplanation(e, { summary: e.decision === '지급 보류' ? '지급 정지 사유입니다.' : '지급 보류 사유입니다.', basis: [], checks: [] });
+  assert.equal(wrongTerm.ok, false);
+  assert.equal(wrongTerm.badTerms.length, 1);
 });
 
 test('접촉 사고 치료기간이 비교 집단 상위 5%면 치료 기간 지표가 걸린다', () => {

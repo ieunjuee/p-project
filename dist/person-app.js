@@ -127,7 +127,7 @@ function explanationPanel(r) {
       <p class="provider">${x.provider === 'api' ? 'LLM이 코드가 만든 근거 JSON을 바탕으로 작성했습니다.' : 'LLM 미연결 · 코드가 계산한 수치로 만든 데모 설명입니다.'}</p></div>
       ${state.verification ? `<div class="info-note ${state.verification.ok ? '' : 'warning'}">수치 검증: ${state.verification.ok
         ? '설명에 나온 모든 숫자와 근거 번호가 코드 계산 결과와 일치합니다.'
-        : `코드 계산 결과에 없는 값 ${esc([...state.verification.badNumbers, ...state.verification.badIds].slice(0, 5).join(', '))} 을 발견해 이 설명을 무효 처리했습니다.`}</div>` : ''}
+        : `코드 계산 결과에 없는 값 ${esc([...state.verification.badNumbers, ...state.verification.badIds, ...(state.verification.badTerms || [])].slice(0, 5).join(', '))} 을 발견해 이 설명을 무효 처리했습니다.`}</div>` : ''}
       <button class="button link section-gap" data-action="explain">설명 다시 생성</button>`
     : `<div class="ai-placeholder"><h3>숫자를 업무의 언어로</h3><p>이 사람의 위험도 근거를 정리하고,<br>확인할 항목을 제시합니다.</p>
       <button class="button primary" data-action="explain">설명 생성</button></div>`}
@@ -137,11 +137,11 @@ function explanationPanel(r) {
 const assistBadge = (x) => `<span class="badge ${x.result.provider === 'api' ? 'green' : 'gray'}">${x.result.provider === 'api' ? 'LLM 연결' : '데모 답변'}</span>`;
 const assistCheck = (x) => (x.check && !x.check.ok ? `<div class="info-note warning">수치 검증에서 코드 계산에 없는 값을 발견해 데모 답변으로 대체했습니다.</div>` : '');
 
-function askPanel() {
+function askPanel(r) {
   const x = state.assist.ask;
-  const chips = ['왜 보류인가요?', '정상일 수 있는 이유는?', '무엇을 확인해야 하나요?'];
+  const chips = [`왜 ${E.decision(r)}인가요?`, '정상일 수 있는 이유는?', '무엇을 확인해야 하나요?'];
   return `<section class="panel ai-panel section-gap"><div class="ai-status"><h2>담당자 질문</h2>${x ? assistBadge(x) : ''}</div>
-    <form class="question-form" data-form="ask"><input id="ask-input" placeholder="예: 왜 보류인가요?" value="${esc(x ? x.question : '')}" aria-label="질문 입력" maxlength="300">
+    <form class="question-form" data-form="ask"><input id="ask-input" placeholder="예: ${esc(chips[0])}" value="${esc(x ? x.question : '')}" aria-label="질문 입력" maxlength="300">
       <button class="button primary" type="submit">질문</button></form>
     <div class="suggestions">${chips.map((c) => `<button class="suggestion" type="button" data-ask="${esc(c)}">${esc(c)}</button>`).join('')}</div>
     ${x ? `<div class="chat-answer"><strong>${esc(x.question)}</strong>${esc(x.result.answer)}
@@ -178,7 +178,7 @@ function detail(r) {
   return `<div class="detail-grid"><div>${scoreBlock(r)}
     ${signalList('의료 지표 5개', r.signals.med, `같은 병명 기준 ${r.config.medWindowDays}일 관찰 · 기준값은 초안입니다.`)}
     ${signalList('자동차 지표 5개', r.signals.auto, `${r.config.autoWindowDays}일 관찰 · 기준값은 초안입니다.`)}</div>
-    <div>${explanationPanel(r)}${askPanel()}${requestPanel(r)}${gapPanel(r)}
+    <div>${explanationPanel(r)}${askPanel(r)}${requestPanel(r)}${gapPanel(r)}
     <section class="panel section-gap"><div class="panel-head"><h2>위험도 구간</h2></div><div class="panel-body">
       <div class="rule-list">
         <div class="rule-item ${r.risk === '낮음' ? 'hit' : ''}"><span class="rule-state">1</span><div><h4>낮음 (${r.config.medium}점 미만)</h4><p>간단히 확인 후 지급 검토</p></div></div>

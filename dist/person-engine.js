@@ -561,7 +561,9 @@
     const badNumbers = unique((stripped.match(/\d[\d,]*(?:\.\d+)?/g) || [])
       .map((x) => x.replace(/,$/, ''))
       .filter((x) => !numbers.has(x) && !numbers.has(x.replace(/,/g, '')) && !haystack.includes(x.replace(/,/g, ''))));
-    return { ok: !badNumbers.length && !badIds.length, badNumbers, badIds };
+    // 결과 제안 이름(지급 보류, 지급 정지 권고)이 코드가 정한 결정과 다르게 쓰였는지 확인합니다.
+    const badTerms = ['지급 보류', '지급 정지'].filter((t) => text.includes(t) && !String(e.decision).includes(t));
+    return { ok: !badNumbers.length && !badIds.length && !badTerms.length, badNumbers, badIds, badTerms };
   }
 
   /** 정답표와 비교한 성능. 정답표는 화면 데이터에 포함하지 않습니다. */
