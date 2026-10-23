@@ -98,24 +98,26 @@ export async function explainPerson(evidence, options = {}) {
 /* 담당자를 돕는 추가 기능 3가지: 질문 답변(ask), 증빙 요청서 초안(request), 판단 불가 보완(gap).
  * 모두 코드가 정한 근거 안에서만 말하고, 응답 속 수치와 번호는 verifyExplanation으로 다시 확인합니다. */
 const strings = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+const FORMAT = '읽기 쉽게 쓰세요. 한 항목은 한 문장으로 짧게 쓰고, 항목 앞에 번호나 기호를 붙이지 마세요(화면에서 붙입니다).';
 const tasks = {
   ask: {
     name: 'person_answer',
-    task: '담당자의 질문에 입력 JSON의 근거만으로 답하세요. 답에 관련 청구 번호와 사고 번호를 함께 적고 citations에도 넣으세요. 근거로 답할 수 없으면 근거가 없다고 답하세요.',
-    schema: { answer: { type: 'string' }, citations: { type: 'array', items: { type: 'string' } } },
-    valid: (c) => typeof c.answer === 'string' && strings(c.citations),
+    task: `담당자의 질문에 입력 JSON의 근거만으로 답하세요. ${FORMAT} answer에는 결론을 한두 문장으로 쓰고, points에는 근거나 확인할 항목을 한 줄씩 최대 5개 쓰세요. 각 항목에 관련 청구 번호나 사고 번호를 함께 적고 citations에도 넣으세요. 근거로 답할 수 없으면 근거가 없다고 답하세요.`,
+    schema: { answer: { type: 'string' }, points: { type: 'array', items: { type: 'string' } }, citations: { type: 'array', items: { type: 'string' } } },
+    valid: (c) => typeof c.answer === 'string' && strings(c.citations) && (c.points === undefined || strings(c.points)),
     demo: (e, q) => engine.demoAsk(e, q),
   },
   request: {
     name: 'person_request',
-    task: '고객에게 추가로 요청할 서류 목록(documents)과 담당자가 확인한 뒤 보낼 안내 문장(message)을 작성하세요. 문장은 정중하고 중립적이어야 하며 부정행위를 의심한다는 표현을 쓰지 마세요. 제출 기한 같은 새 숫자는 만들지 마세요.',
-    schema: { documents: { type: 'array', items: { type: 'string' } }, message: { type: 'string' } },
-    valid: (c) => strings(c.documents) && typeof c.message === 'string',
+    task: `고객에게 보낼 증빙 요청 이메일을 쓰세요. 인사말과 끝인사는 코드가 붙이니 쓰지 마세요. ${FORMAT} subject는 제목 한 줄(30자 안팎), intro는 청구 번호를 포함한 연락 사유 한두 문장, documents는 요청할 서류 이름만 짧게(한 항목에 서류 하나), reasons는 documents와 같은 순서로 각 서류가 왜 필요한지 고객이 이해하기 쉬운 한 문장, closing은 서류 확인 후 안내하겠다는 마무리 한두 문장입니다. 정중하고 중립적으로 쓰고, 의심, 사기, 위험도, 점수 같은 표현은 쓰지 마세요. 제출 기한 같은 새 숫자는 만들지 마세요.`,
+    schema: { subject: { type: 'string' }, intro: { type: 'string' }, documents: { type: 'array', items: { type: 'string' } }, reasons: { type: 'array', items: { type: 'string' } }, closing: { type: 'string' } },
+    valid: (c) => typeof c.subject === 'string' && typeof c.intro === 'string' && typeof c.closing === 'string' && strings(c.documents) && strings(c.reasons),
+    post: (c) => ({ ...c, message: engine.composeRequest(c) }),
     demo: (e) => engine.demoRequest(e),
   },
   gap: {
     name: 'person_gap',
-    task: '위험도가 판단 불가인 이유(summary), 비어 있는 값(missing), 무엇을 확인하면 판단되는지(how)를 쓰세요. 판단 불가가 아니면 missing과 how는 빈 배열로 두세요.',
+    task: `위험도가 판단 불가인 이유(summary), 비어 있는 값(missing), 무엇을 확인하면 판단되는지(how)를 쓰세요. ${FORMAT} summary는 한두 문장, missing은 비어 있는 값을 한 줄씩(사고 번호와 청구 번호 포함), how는 확인 순서대로 한 단계에 행동 하나씩 최대 4개 쓰세요. 판단 불가가 아니면 missing과 how는 빈 배열로 두세요.`,
     schema: { summary: { type: 'string' }, missing: { type: 'array', items: { type: 'string' } }, how: { type: 'array', items: { type: 'string' } } },
     valid: (c) => typeof c.summary === 'string' && strings(c.missing) && strings(c.how),
     demo: (e) => engine.demoGap(e),
@@ -134,5 +136,5 @@ export async function assistPerson(kind, evidence, question = '', options = {}) 
   if (!task.valid(content)) throw Error('응답 형식 오류');
   const check = engine.verifyExplanation(clean, content);
   if (!check.ok) return { ...task.demo(clean, q), replaced: true, verification: check };
-  return { ...content, provider: 'api', verification: check };
+  return { ...(task.post ? task.post(content) : content), provider: 'api', verification: check };
 }
