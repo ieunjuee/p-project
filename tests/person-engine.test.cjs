@@ -220,3 +220,24 @@ test('증빙 요청서는 제목, 인사, 서류별 사유, 끝인사가 있는 
   assert.match(req.message, /감사합니다\.$/);
   assert.ok(!/의심|사기|위험도|점수/.test(req.message));
 });
+
+test('증빙 요청서 가드는 내부 기준과 압박 표현을 코드 기본 문구로 바꾼다', () => {
+  const e = E.evidence(run({
+    med_claim: [med('M1', '2026-03-02', { disease_code: 'S33', receipt_no: null, accident_flag: '상해' })],
+    auto_accident: [accident('A1', '2026-03-01')],
+    auto_claim: [autoClaim('AC1', 'A1', '대인치료비', '2026-03-05', { hospital_id: 'H1', receipt_no: null, treat_start: '2026-03-01', treat_end: '2026-03-10' })],
+  }));
+  const out = E.sanitizeRequest(e, {
+    subject: '문서 요청', intro: '청구 건을 확인하던 중 연락드립니다.',
+    documents: ['진료비 세부내역서', '병원 방문 증빙', '수치 12회 서류'],
+    reasons: ['진료 횟수가 기준을 초과했는지 확인하기 위해', '진료 경과를 확인하기 위해 필요합니다.', '무관'],
+    closing: '제출은 필수입니다.',
+  });
+  assert.deepEqual(out.documents, ['진료비 세부내역서', '병원 방문 증빙']);
+  assert.equal(out.reasons[0], '진료비 항목과 금액을 확인하기 위해 필요합니다.');
+  assert.equal(out.reasons[1], '진료 경과를 확인하기 위해 필요합니다.');
+  assert.ok(!/필수/.test(out.closing));
+  assert.equal(out.subject, '문서 요청');
+  assert.ok(out.guarded.length >= 3);
+  assert.ok(!/기준|상위|초과/.test(E.composeRequest(out)));
+});

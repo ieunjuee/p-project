@@ -64,3 +64,16 @@ test('증빙 요청서 응답은 코드가 이메일 본문으로 조립한다',
   assert.match(out.message, /^안녕하세요\.\n\n청구 건을 확인하던 중 연락드립니다\.\n\n\[ 요청 서류 \]\n① 진료비 세부내역서\n   - 진료비 항목을 확인하기 위해 필요합니다\./);
   assert.match(out.message, /감사합니다\.$/);
 });
+
+test('모델이 붙인 목록 번호와 기호는 지우고, 내부 기준이 든 사유는 기본 문구로 바꾼다', async () => {
+  const ask = await assistPerson('ask', evidence, '점수는?', { fetch: reply({ answer: '근거가 없습니다.', points: ['1. 첫째 항목', '- 둘째 항목'], citations: [] }) });
+  assert.deepEqual(ask.points, ['첫째 항목', '둘째 항목']);
+  const req = await assistPerson('request', evidence, '', { fetch: reply({
+    subject: '추가 서류 안내', intro: '청구 건을 확인하던 중 연락드립니다.',
+    documents: ['진료비 세부내역서'], reasons: ['진료 횟수가 기준을 초과했는지 확인하기 위해'], closing: '확인 후 안내드리겠습니다.',
+  }) });
+  assert.equal(req.provider, 'api');
+  assert.ok(req.guarded.includes('서류 1 사유'));
+  assert.ok(!/기준/.test(req.message));
+  assert.match(req.message, /진료비 항목과 금액을 확인하기 위해 필요합니다\./);
+});
