@@ -1,9 +1,22 @@
 {
-  "name":"insurelens-web",
-  "version":"1.0.0",
-  "private":true,
-  "description":"보험 청구 데이터 기반 의사결정 및 LLM 설명 지원",
-  "engines":{"node":">=22"},
-  "scripts":{"start":"node server.mjs","test":"node --test tests/engine.test.cjs tests/charts.test.cjs tests/ui.test.cjs"},
-  "devDependencies":{"jsdom":"30.1.3"}
+ "name": "insurelens-web",
+ "version": "1.0.0",
+ "private": true,
+ "description": "보험 청구 데이터 기반 의사결정 및 LLM 설명 지원",
+ "engines": {
+  "node": ">=22"
+ },
+ "scripts": {
+  "start": "node server.mjs",
+  "test": "node --test tests/engine.test.cjs tests/charts.test.cjs tests/ui.test.cjs tests/person-engine.test.cjs tests/person-sql.test.cjs tests/person-llm.test.mjs",
+  "data": "python3 data/build_db.py",
+  "evaluate": "node tools/evaluate.mjs",
+  "verify": "python3 tools/verify_sql.py"
+ },
+ "devDependencies": {
+  "jsdom": "30.1.3"
+ },
+ "dependencies": {
+  "sql.js": "^1.13.0"
+ }
 }
