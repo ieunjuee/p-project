@@ -54,3 +54,13 @@ test('형식이 틀리거나 모르는 종류는 오류', async () => {
   await assert.rejects(() => assistPerson('ask', evidence, 'q', { fetch: reply({ answer: 1 }) }), /형식/);
   await assert.rejects(() => assistPerson('nope', evidence), /종류/);
 });
+
+test('증빙 요청서 응답은 코드가 이메일 본문으로 조립한다', async () => {
+  const out = await assistPerson('request', evidence, '', { fetch: reply({
+    subject: '추가 서류 안내', intro: '청구 건을 확인하던 중 연락드립니다.',
+    documents: ['진료비 세부내역서'], reasons: ['진료비 항목을 확인하기 위해 필요합니다.'], closing: '확인 후 안내드리겠습니다.',
+  }) });
+  assert.equal(out.provider, 'api');
+  assert.match(out.message, /^안녕하세요\.\n\n청구 건을 확인하던 중 연락드립니다\.\n\n\[ 요청 서류 \]\n① 진료비 세부내역서\n   - 진료비 항목을 확인하기 위해 필요합니다\./);
+  assert.match(out.message, /감사합니다\.$/);
+});

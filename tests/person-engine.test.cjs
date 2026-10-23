@@ -205,3 +205,18 @@ test('지급 건에는 증빙 요청서를 만들지 않고, 판단 불가가 �
   assert.deepEqual(E.demoGap(e).missing, []);
 });
 
+
+test('증빙 요청서는 제목, 인사, 서류별 사유, 끝인사가 있는 이메일 형식이다', () => {
+  const e = E.evidence(run({
+    med_claim: [med('M1', '2026-03-02', { disease_code: 'S33', receipt_no: null, accident_flag: '상해' })],
+    auto_accident: [accident('A1', '2026-03-01')],
+    auto_claim: [autoClaim('AC1', 'A1', '대인치료비', '2026-03-05', { hospital_id: 'H1', receipt_no: null, treat_start: '2026-03-01', treat_end: '2026-03-10' })],
+  }));
+  const req = E.demoRequest(e);
+  assert.ok(req.subject.length > 0);
+  assert.equal(req.reasons.length, req.documents.length);
+  assert.match(req.message, /^안녕하세요\./);
+  assert.match(req.message, /\[ 요청 서류 \]\n① /);
+  assert.match(req.message, /감사합니다\.$/);
+  assert.ok(!/의심|사기|위험도|점수/.test(req.message));
+});
