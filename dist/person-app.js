@@ -139,6 +139,8 @@ const termsBlock = (terms) => ((terms || []).length ? `<div class="section-gap">
   <p style="white-space:pre-wrap;line-height:1.8;color:#4b5d52;margin:6px 0 0;max-height:260px;overflow:auto">${esc(t.text)}</p></details>`).join('')}
   <p class="muted" style="font-size:9px;margin-top:6px">표준약관(보험업감독업무시행세칙 별표15) 원문입니다. 약관은 근거 확인용이며 점수와 결과 제안을 바꾸지 않습니다.</p></div>` : '');
 /** 서버가 함께 보낸 약관 조항까지 넣어 검증합니다. 조항 번호(제4조 등)를 지어낸 숫자로 보지 않게 합니다. */
+/* 브라우저는 서버(LLM_TIMEOUT_MS 기본 120초)보다 오래 기다립니다. 30초면 서버가 아직 LLM을 기다리는 중에 화면이 먼저 데모로 바뀝니다. */
+const LLM_WAIT_MS = 130000;
 const verifyWithTerms = (payload, result) => E.verifyExplanation({ ...payload, terms: result.terms || [] }, result);
 
 const assistBadge = (x) => `<span class="badge ${x.result.provider === 'api' ? 'green' : 'gray'}">${x.result.provider === 'api' ? 'LLM 연결' : '데모 답변'}</span>`;
@@ -336,7 +338,7 @@ async function explain() {
     if (!window.INSURELENS_SERVER) throw Error('서버 미연결');
     const response = await fetch('/api/explain-person', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ evidence: payload }), signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ evidence: payload }), signal: AbortSignal.timeout(LLM_WAIT_MS),
     });
     if (!response.ok) throw Error('API 요청 실패');
     result = await response.json();
@@ -367,7 +369,7 @@ async function assist(kind, question = '') {
     if (!window.INSURELENS_SERVER) throw Error('서버 미연결');
     const response = await fetch('/api/person-assist', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind, evidence: payload, question }), signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ kind, evidence: payload, question }), signal: AbortSignal.timeout(LLM_WAIT_MS),
     });
     if (!response.ok) throw Error('API 요청 실패');
     result = await response.json();
