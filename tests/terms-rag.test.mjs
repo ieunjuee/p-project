@@ -123,3 +123,49 @@ test('답변이나 요약이 빈 칸이면 형식 오류로 처리한다(서버�
   await assert.rejects(() => assistPerson('ask', base, '질문', { fetch: reply({ answer: ' ', points: [], citations: [], term_refs: [] }) }), /형식/);
   await assert.rejects(() => explainPerson(base, { fetch: reply({ summary: '', basis: [], checks: [], term_refs: [] }) }), /형식/);
 });
+
+test('적용 문장: 매핑 조항마다 이 사람의 사고·청구 번호와 지급액으로 어떻게 걸리는지 코드가 쓴다', () => {
+  const e = { ...withLink('중복 확실'), cross_links: [{ ...link('중복 확실'), accident_date: '2025-03-02', auto_paid: 120000, med_paid: 120000 }] };
+  const [term] = rag.termsFor('explain', e);
+  assert.match(term.apply[0], /^사고 A0001\(2025-03-02\) 관련 청구 M0001: .*자동차보험 120,000원, 실손 120,000원/);
+  assert.match(rag.termsFor('explain', withLink('고지 확인'))[0].apply[0], /청구 M0001: .*질병으로 청구/);
+  assert.match(rag.termsFor('gap', withLink('판정 불가'))[0].apply[0], /청구 M0001: .*영수증 번호가 비어/);
+  assert.match(rag.termsFor('request', base)[0].apply[0], /청구 서류/);                        // 판정 없는 요청서: 서류 범위 안내
+  assert.match(rag.termsFor('ask', base, '같은 치료비를 자동차보험이랑 실손에서 받으면')[0].apply[0], /질문으로 찾은 조항/);
+});
+
+test('적용 문장은 건수가 많으면 3건까지만 쓰고 나머지는 개수로 줄인다', () => {
+  const e = { ...withLink('중복 의심'), cross_links: [1, 2, 3, 4, 5].map((n) => link('중복 의심', n)) };
+  const { apply } = rag.termsFor('explain', e)[0];
+  assert.equal(apply.length, 4);
+  assert.equal(apply[3], '외 2건도 같은 판정입니다.');
+});
+
+test('적용 문장은 LLM 입력과 화면 응답에 함께 가고, LLM이 그 숫자를 옮겨 써도 지어낸 숫자로 보지 않는다', async () => {
+  let sent;
+  const e = withLink('중복 확실');
+  const [term] = rag.termsFor('explain', e);
+  const fetchMock = async (_url, init) => {
+    sent = JSON.parse(JSON.parse(init.body).messages[1].content);
+    return reply({ summary: '같은 영수증이 두 보험에서 지급되었습니다.', checks: [], term_refs: [term.ref],
+      basis: ['관련 약관: 실손의료보험 표준약관(기본형) 제4조 — 청구 M0001은 자동차보험 100,000원이 이미 지급되어 실손 보상 제외에 해당하는지 확인할 건입니다 (사고 A0001).'] })();
+  };
+  const out = await explainPerson(e, { fetch: fetchMock });
+  assert.deepEqual(sent.terms[0].apply, term.apply);
+  assert.equal(out.provider, 'api');
+  assert.deepEqual(out.terms[0].apply, term.apply);
+});
+
+test('조항 원문: PDF 줄바꿈과 표 칸이 정리되어 있다', () => {
+  const text = (doc, article) => rag.chunks.filter((c) => c.doc.startsWith(doc) && c.article === article).map((c) => c.text).join('\n');
+  const lines = (t) => t.split('\n');
+  // 실손 제4조 ③3호: 한 줄로 이어지고, 표 왼쪽 칸(보장종목)은 머리 줄로 들어간다
+  assert.ok(lines(text('실손의료보험 표준약관(기본형)', '제4조')).some((l) => l.startsWith('3. 자동차보험(공제를 포함합니다)에서 보상받는 치료관계비(과실상계 후 금액을 기준으로 합니다)')));
+  assert.match(text('실손의료보험 표준약관(기본형)', '제4조'), /\[보장종목: \(1\) ?상해급여\]\n① 회사는/);
+  // 붙임1: 용어 | 정의 표가 '용어: 정의' 한 줄
+  assert.ok(lines(text('실손의료보험 표준약관(기본형)', '붙임1')).includes('상해: 보험기간 중 발생한 급격하고 우연한 외래의 사고'));
+  // 자동차 제27조: ◦ 표가 '서류 (보장종목)' 한 줄
+  assert.ok(lines(text('자동차보험 표준약관', '제27조')).includes('3. 손해배상의 이행사실을 증명하는 서류 (대인배상, 대물배상)'));
+  // 전체: 3글자 이하로 끊긴 줄이 거의 없다(정리 전 775줄)
+  assert.ok(rag.chunks.flatMap((c) => lines(c.text)).filter((l) => l.length <= 3).length < 30);
+});

@@ -5,7 +5,9 @@
  * 찾는 방법 두 가지
  *   1. 고정 매핑: 코드 판정(중복 확실 등)과 걸린 지표에 정해 둔 조항을 붙입니다. 같은 입력이면 같은 조항이 나옵니다.
  *      LLM에는 원문 대신 사람이 쓴 한 줄 요약을 보냅니다.
- *   2. 키워드 검색: 담당자 질문(자유 문장)은 글자 2개 단위 BM25로 가장 비슷한 조항을 찾습니다. 외부 모델이 필요 없습니다. */
+ *   2. 키워드 검색: 담당자 질문(자유 문장)은 글자 2개 단위 BM25로 가장 비슷한 조항을 찾습니다. 외부 모델이 필요 없습니다.
+ * 적용 문장(apply): 매핑 조항이 이 사람의 어느 건에 어떻게 걸리는지 코드가 근거 데이터(사고·청구 번호, 날짜, 지급액)로 씁니다.
+ *   LLM은 이 문장을 풀어 설명만 하고, 숫자는 근거 데이터에서만 나옵니다. */
 import { readFileSync } from 'node:fs';
 
 const MAX_TERMS = 3;      // LLM에 넣는 조항 수
@@ -30,6 +32,32 @@ const TERM = {
   autoDocs: { doc: AUTO, article: '제27조', has: '제출',
     summary: '피보험자는 보장종목별로 보험금 청구서, 손해액을 증명하는 서류(진단서 등) 등을 갖춰 청구하며, 보장종목에 따라 교통사고사실확인원 등이 추가로 필요합니다.' },
 };
+/* 적용 문장. 판정 문장은 확정이 아니라 '확인할 내용'으로 씁니다(최종 판단은 담당자). */
+const MAX_APPLY = 3; // 조항 하나에 보여줄 건수. 나머지는 '외 n건'
+const won = (n) => `${Math.round(n).toLocaleString('ko-KR')}원`;
+const caseOf = (l) => `사고 ${l.accident_id}${l.accident_date ? `(${l.accident_date})` : ''} 관련 청구 ${l.claim_id}`;
+const paid = (l) => (l.auto_paid != null ? `자동차보험 ${won(l.auto_paid)}, 실손 ${won(l.med_paid)}` : `실손 ${won(l.med_paid)}`);
+const perLink = (e, names, line) => {
+  const links = (e.cross_links || []).filter((l) => names.includes(l.verdict));
+  const out = links.slice(0, MAX_APPLY).map(line);
+  if (links.length > MAX_APPLY) out.push(`외 ${links.length - MAX_APPLY}건도 같은 판정입니다.`);
+  return out;
+};
+const APPLY = {
+  autoComp: (e) => perLink(e, ['중복 확실', '중복 의심'], (l) => (l.verdict === '중복 확실'
+    ? `${caseOf(l)}: 같은 영수증의 치료비가 두 보험에서 모두 지급되었습니다(${paid(l)}). 자동차보험에서 보상받은 치료비는 실손에서 보상하지 않으므로, 실손 지급분이 이 조항의 보상 제외에 해당하는지 확인합니다.`
+    : `${caseOf(l)}: 같은 병원·같은 치료 기간에 두 보험에서 비슷한 금액이 지급되었습니다(${paid(l)}). 같은 치료비라면 이 조항의 보상 제외에 해당하므로, 서로 다른 비용 항목인지 확인합니다.`)),
+  injury: (e) => perLink(e, ['고지 확인'], (l) => `${caseOf(l)}: 사고로 생긴 손상 진료인데 실손에는 질병으로 청구되었습니다. 이 조항의 상해(급격하고 우연한 외래의 사고)에 해당하면 상해로 다뤄야 하므로, 사고 경위와 청구 구분을 확인합니다.`),
+  medClaim: (e) => {
+    const out = perLink(e, ['판정 불가'], (l) => `${caseOf(l)}: 자동차·실손 양쪽 영수증 번호가 비어 있어 같은 치료비인지 판정할 수 없습니다. 이 조항의 청구 서류인 진료비 계산서·영수증과 진료비 세부산정내역으로 확인합니다.`);
+    return out.length ? out : ['요청할 실손 서류는 이 조항이 정한 청구 서류(진료비 계산서·영수증, 진료비 세부산정내역 등) 안에서 고릅니다.'];
+  },
+  autoDocs: (e) => ((e.cross_links || []).some((l) => l.verdict === '판정 불가')
+    ? ['같은 치료비의 자동차보험 쪽 지급 근거는 이 조항의 손해액 증명 서류(진단서 등)로 대조합니다.']
+    : ['요청할 자동차보험 서류는 이 조항이 정한 제출 서류(보험금 청구서, 손해액 증명 서류 등) 안에서 고릅니다.']),
+};
+const SEARCHED = ['담당자 질문으로 찾은 조항입니다. 코드 판정과 직접 연결된 조항은 아니니 원문을 함께 확인하세요.'];
+
 const RULES = [
   // 같은 치료비를 자동차보험과 실손에서 받은 경우의 근거
   { when: (e) => verdicts(e).some((v) => v === '중복 확실' || v === '중복 의심'), use: ['autoComp'] },
@@ -52,7 +80,7 @@ export function createTermsRag(chunks = loadTerms()) {
     const t = TERM[key];
     const found = chunks.find((c) => c.doc === t.doc && c.article === t.article && c.text.includes(t.has));
     if (!found) throw Error(`약관 매핑 오류: ${t.doc} ${t.article}`);
-    return { chunk: found, has: t.has, summary: t.summary };
+    return { key, chunk: found, has: t.has, summary: t.summary };
   };
   const mapped = Object.fromEntries(Object.keys(TERM).map((k) => [k, find(k)])); // 시작할 때 전부 확인
 
@@ -76,7 +104,7 @@ export function createTermsRag(chunks = loadTerms()) {
       }
       return { chunk: c, score };
     });
-    // MIN_SCORE: "왜 보류인가요?"처럼 약관과 무관한 질문에 엉뚱한 조항이 붙지 않게 하는 하한 (196조각 기준 실험값)
+    // MIN_SCORE: "왜 보류인가요?"처럼 약관과 무관한 질문에 엉뚱한 조항이 붙지 않게 하는 하한 (조각 정리 후 195조각에서도 확인)
     return scored.filter((s) => s.score >= MIN_SCORE).sort((a, b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id)).slice(0, k);
   }
 
@@ -86,11 +114,15 @@ export function createTermsRag(chunks = loadTerms()) {
     const at = has ? Math.max(0, text.indexOf(has) - 150) : 0;
     return text.slice(at, at + EXCERPT);
   };
-  /* llm: LLM에 보낼 내용(매핑 조항은 요약, 검색 조항은 발췌). full: 화면 '자세히'에 보여줄 조각 전문. */
-  const view = ({ chunk, has, summary }) => ({
-    ref: chunk.id, cite: chunk.cite, full: chunk.text,
-    llm: summary ? { ref: chunk.id, cite: chunk.cite, summary } : { ref: chunk.id, cite: chunk.cite, text: excerpt(chunk, has) },
-  });
+  /* llm: LLM에 보낼 내용(매핑 조항은 요약+적용 문장, 검색 조항은 발췌). full: 화면 '원문 보기'의 조각 전문.
+   * apply: 이 사람에게 어떻게 적용되는지(코드가 쓴 문장). */
+  const view = ({ key, chunk, has, summary }, evidence) => {
+    const apply = key ? APPLY[key](evidence) : SEARCHED;
+    return {
+      ref: chunk.id, cite: chunk.cite, full: chunk.text, apply,
+      llm: summary ? { ref: chunk.id, cite: chunk.cite, summary, apply } : { ref: chunk.id, cite: chunk.cite, text: excerpt(chunk, has) },
+    };
+  };
 
   /** 작업 종류(explain, ask, request, gap)에 맞는 조항을 최대 3개 고릅니다. */
   function termsFor(kind, evidence, question = '') {
@@ -100,7 +132,7 @@ export function createTermsRag(chunks = loadTerms()) {
     // 판정으로 정해진 조항이 이미 있으면 검색 조항은 1개만: 글자만 겹치는 엉뚱한 조항이 섞이는 것을 줄입니다.
     if (kind === 'ask' && question) picked.push(...search(question, picked.length ? 1 : 2).map((s) => ({ chunk: s.chunk })));
     const seen = new Set();
-    return picked.filter((p) => !seen.has(p.chunk.id) && seen.add(p.chunk.id)).slice(0, MAX_TERMS).map(view);
+    return picked.filter((p) => !seen.has(p.chunk.id) && seen.add(p.chunk.id)).slice(0, MAX_TERMS).map((p) => view(p, evidence));
   }
 
   return { termsFor, search, chunks };

@@ -135,9 +135,12 @@ function explanationPanel(r) {
 }
 
 /* 관련 약관: 조항 이름을 누르면 원문 조각을 펼칩니다(LLM을 거치지 않은 원문). */
-const termsBlock = (terms) => ((terms || []).length ? `<div class="section-gap"><h3>관련 약관</h3>${terms.map((t) => `<details style="margin-top:6px;font-size:11px"><summary style="cursor:pointer">${esc(t.cite)}</summary>
-  <p style="white-space:pre-wrap;line-height:1.8;color:#4b5d52;margin:6px 0 0;max-height:260px;overflow:auto">${esc(t.text)}</p></details>`).join('')}
-  <p class="muted" style="font-size:9px;margin-top:6px">표준약관(보험업감독업무시행세칙 별표15) 원문입니다. 약관은 근거 확인용이며 점수와 결과 제안을 바꾸지 않습니다.</p></div>` : '');
+/* 관련 약관: 조항 이름, 이 건에 어떻게 적용되는지(코드가 근거 데이터로 쓴 문장), 펼치면 조항 원문 */
+const termsBlock = (terms) => ((terms || []).length ? `<div class="section-gap"><h3>관련 약관</h3>${terms.map((t) => `<div style="margin-top:10px;font-size:11px"><strong style="color:#3d5a50">${esc(t.cite)}</strong>
+  ${(t.apply || []).length ? `<ul style="margin:4px 0 0;padding-left:17px">${t.apply.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
+  <details style="margin-top:4px"><summary style="cursor:pointer;color:#7d9183">조항 원문 보기</summary>
+  <p style="white-space:pre-wrap;line-height:1.8;color:#4b5d52;margin:6px 0 0;max-height:260px;overflow:auto">${esc(t.text)}</p></details></div>`).join('')}
+  <p class="muted" style="font-size:9px;margin-top:6px">원문은 표준약관(보험업감독업무시행세칙 별표15)이고, 적용 내용은 코드가 이 사람의 판정과 근거로 쓴 문장입니다. 약관은 근거 확인용이며 점수와 결과 제안을 바꾸지 않습니다.</p></div>` : '');
 /** 서버가 함께 보낸 약관 조항까지 넣어 검증합니다. 조항 번호(제4조 등)를 지어낸 숫자로 보지 않게 합니다. */
 /* 브라우저는 서버(LLM_TIMEOUT_MS 기본 120초)보다 오래 기다립니다. 30초면 서버가 아직 LLM을 기다리는 중에 화면이 먼저 데모로 바뀝니다. */
 const LLM_WAIT_MS = 130000;
