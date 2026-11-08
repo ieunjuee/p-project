@@ -9,6 +9,7 @@
  * 실행: node rag/eval/eval-search.mjs   (점수 하한별 표: --sweep)
  */
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { createTermsRag } from '../../terms-rag.mjs';
 
 const DOCS = { 실손: '실손의료보험 표준약관(기본형)', 특약1: '실손의료보험 특별약관1(중증 비급여)', 특약2: '실손의료보험 특별약관2(비중증 비급여)', 자동차: '자동차보험 표준약관' };
@@ -70,7 +71,7 @@ export function score(search, minScore) {
 
 export const METHODS = { '제목 매칭': [titleSearch, 1], '단어 BM25': [wordSearch, 0.01], '글자 2개 BM25(현재)': [gramSearch, 15] };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {  // Windows 경로(C:\\...)도 맞게 비교
   const pct = (v) => `${(v * 100).toFixed(0)}%`;
   console.log(`질문 ${questions.length}개 (약관 안 ${questions.filter((x) => x.gold.length).length}, 약관 밖 ${questions.filter((x) => !x.gold.length).length})\n`);
   console.log('| 방식 | Hit@1 | Hit@2 | MRR@5 | 약관 밖 질문 거름 |\n|---|---|---|---|---|');
