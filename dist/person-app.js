@@ -135,11 +135,29 @@ function explanationPanel(r) {
 }
 
 /* 관련 약관: 조항 이름을 누르면 원문 조각을 펼칩니다(LLM을 거치지 않은 원문). */
+/* 조항 원문: 마크다운 표 줄(| 로 시작)은 표로, 나머지는 줄바꿈을 살린 문단으로 보여 줍니다. */
+const termText = (text) => {
+  const out = [];
+  let para = [], table = [];
+  const td = (tag, c) => `<${tag} style="border:1px solid #dfe6e2;padding:3px 6px;text-align:left;vertical-align:top">${esc(c)}</${tag}>`;
+  const flush = () => {
+    if (para.length) out.push(`<p style="white-space:pre-wrap;margin:0">${esc(para.join('\n'))}</p>`);
+    const rows = table.filter((r) => !/^\|(-+\|)+$/.test(r)).map((r) => r.replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+    if (rows.length) out.push(`<table style="border-collapse:collapse;margin:6px 0;font-size:10px;width:100%;white-space:normal"><tr>${rows[0].map((c) => td('th', c)).join('')}</tr>${rows.slice(1).map((r) => `<tr>${r.map((c) => td('td', c)).join('')}</tr>`).join('')}</table>`);
+    para = []; table = [];
+  };
+  for (const line of String(text || '').split('\n')) {
+    if (line.startsWith('|') !== (table.length > 0)) flush();
+    (line.startsWith('|') ? table : para).push(line);
+  }
+  flush();
+  return out.join('');
+};
 /* 관련 약관: 조항 이름, 이 건에 어떻게 적용되는지(코드가 근거 데이터로 쓴 문장), 펼치면 조항 원문 */
 const termsBlock = (terms) => ((terms || []).length ? `<div class="section-gap"><h3>관련 약관</h3>${terms.map((t) => `<div style="margin-top:10px;font-size:11px"><strong style="color:#3d5a50">${esc(t.cite)}</strong>
   ${(t.apply || []).length ? `<ul style="margin:4px 0 0;padding-left:17px">${t.apply.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
   <details style="margin-top:4px"><summary style="cursor:pointer;color:#7d9183">조항 원문 보기</summary>
-  <p style="white-space:pre-wrap;line-height:1.8;color:#4b5d52;margin:6px 0 0;max-height:260px;overflow:auto">${esc(t.text)}</p></details></div>`).join('')}
+  <div style="line-height:1.8;color:#4b5d52;margin:6px 0 0;max-height:260px;overflow:auto">${termText(t.text)}</div></details></div>`).join('')}
   <p class="muted" style="font-size:9px;margin-top:6px">원문은 표준약관(보험업감독업무시행세칙 별표15)이고, 적용 내용은 코드가 이 사람의 판정과 근거로 쓴 문장입니다. 약관은 근거 확인용이며 점수와 결과 제안을 바꾸지 않습니다.</p></div>` : '');
 /** 서버가 함께 보낸 약관 조항까지 넣어 검증합니다. 조항 번호(제4조 등)를 지어낸 숫자로 보지 않게 합니다. */
 /* 브라우저는 서버(LLM_TIMEOUT_MS 기본 120초)보다 오래 기다립니다. 30초면 서버가 아직 LLM을 기다리는 중에 화면이 먼저 데모로 바뀝니다. */
