@@ -224,3 +224,24 @@ test('약관 개정 대비: 매핑 조항 요약의 근거 문구(facts)가 모�
     for (const f of t.facts) assert.ok(text.includes(flat(f)), `${key}: '${f}'가 ${t.doc} ${t.article} 원문에 없음 — 요약을 원문과 다시 대조하세요`);
   }
 });
+
+test('term_refs 스키마: 넣어 준 조항 번호만 고를 수 있다(작은 모델이 문장을 넣는 실수 방지)', async () => {
+  const schemas = [];
+  const fetchMock = async (_url, init) => {
+    schemas.push(JSON.parse(init.body).response_format.json_schema.schema.properties.term_refs);
+    return reply({ summary: '설명', basis: [], checks: [], term_refs: [], answer: '답', points: [], citations: [] })();
+  };
+  const e = withLink('중복 확실');
+  await explainPerson(e, { fetch: fetchMock });
+  assert.deepEqual(schemas[0].items.enum, rag.termsFor('explain', e).map((t) => t.ref));
+  await assistPerson('ask', withLink('정상 분리 청구'), '날씨 어때요?', { fetch: fetchMock }).catch(() => {});
+  assert.equal(schemas[1].maxItems, 0);   // 조항이 없으면 빈 배열만
+});
+
+test('관련 약관 줄을 코드가 붙일 때 같은 조항은 한 번만 쓴다', async () => {
+  const e = withLink('고지 확인');
+  const [term] = rag.termsFor('explain', e);
+  const out = await explainPerson(e, { fetch: reply({ summary: '설명', basis: ['근거'], checks: [], term_refs: [term.ref, term.ref] }) });
+  const line = out.basis.at(-1);
+  assert.equal(line.split('붙임1').length - 1, 1, line);
+});

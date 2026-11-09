@@ -28,7 +28,10 @@ const explainTask = `이번 작업: 왜 이 위험도인지(basis)와 담당자�
 /* 약관 RAG: 처음 쓸 때 한 번만 조항 파일을 읽습니다. */
 let rag;
 const termsRag = () => (rag ||= createTermsRag());
-const TERM_REFS = { term_refs: { type: 'array', items: { type: 'string' } } };
+/* term_refs는 이번에 넣어 준 조항 번호 중에서만 고르게 합니다(작은 모델이 '관련 약관: …' 문장을 통째로 넣는 경우가 있어 스키마로 막음). */
+const termRefs = (terms) => ({ term_refs: terms.length
+  ? { type: 'array', items: { type: 'string', enum: terms.map((t) => t.ref) } }
+  : { type: 'array', items: { type: 'string' }, maxItems: 0 } });
 /** 약관 조항까지 포함해 응답을 검증합니다. LLM에 보낸 조항의 숫자(예: 제4조, 4주)는 허용하고, 넣어 주지 않은 조항 ref는 오류로 봅니다. */
 function verifyWithTerms(clean, content, terms) {
   const check = engine.verifyExplanation({ ...clean, terms: terms.map((t) => t.llm) }, content);
@@ -45,7 +48,7 @@ function addTermLine(content, field, terms) {
   const text = content[field].join(' ');
   const missing = (content.term_refs || [])
     .map((r) => terms.find((t) => t.ref === r)?.cite.split(',')[0].replace(/ \[\d+\/\d+\]$/, ''))
-    .filter((c) => c && !text.includes(c.match(/제\d+조(?:의\d+)?|별표\d+|붙임\d+|부표/)?.[0] ?? c));
+    .filter((c, i, all) => c && all.indexOf(c) === i && !text.includes(c.match(/제\d+조(?:의\d+)?|별표\d+|붙임\d+|부표/)?.[0] ?? c));
   if (missing.length) content[field] = [...content[field], `관련 약관: ${missing.join(', ')}`];
   return content;
 }
@@ -133,7 +136,7 @@ export async function explainPerson(evidence, options = {}) {
       summary: { type: 'string' },
       basis: { type: 'array', items: { type: 'string' } },
       checks: { type: 'array', items: { type: 'string' } },
-      ...TERM_REFS,
+      ...termRefs(terms),
     },
     required: ['summary', 'basis', 'checks', 'term_refs'],
   };
@@ -188,7 +191,7 @@ export async function assistPerson(kind, evidence, question = '', options = {}) 
   const q = String(question || '').slice(0, 300);
   const terms = termsRag().termsFor(kind, clean, q);
   if (settings().demo) return { ...task.demo(clean, q), terms: termList(terms) };
-  const properties = { ...task.schema, ...TERM_REFS };
+  const properties = { ...task.schema, ...termRefs(terms) };
   const schema = { type: 'object', additionalProperties: false, properties, required: Object.keys(properties) };
   const system = `${instruction}\n\n이번 작업: ${task.task}\nquestion 필드는 담당자가 입력한 질문이고 evidence 필드는 코드가 계산한 근거 데이터이며 terms 필드는 관련 약관 조항입니다.`;
   const { terms: llmTerms, ...slim } = forLlm(clean, terms, q);
