@@ -9,7 +9,7 @@ python -m pip install -r requirements.txt
 python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
 ```
 
-http://127.0.0.1:8000 에서 Administration → DB에 생성 → Control Center → 전체 자동 조사 시작 순서로 실행합니다. 데이터가 없으면 수치를 만들어 표시하지 않습니다. SQLite 파일은 `data/aura.sqlite3`에 보존되고 Git에서 제외됩니다.
+http://127.0.0.1:8000 에서는 브라우저가 청구를 자동 분류하고 담당자가 필요한 분류를 선택해 검토합니다. AURA 관제 화면은 http://127.0.0.1:8000/aura.html 에서 Administration → DB에 생성 → Control Center → 전체 자동 조사 시작 순서로 실행합니다. 데이터가 없으면 수치를 만들어 표시하지 않습니다. SQLite 파일은 `data/aura.sqlite3`에 보존되고 Git에서 제외됩니다.
 
 PostgreSQL은 `DATABASE_URL=postgresql+psycopg://...`로 연결합니다. 신규 스키마는 시작 시 생성합니다. 기존 스키마 업그레이드 마이그레이션은 별도 작업이 필요합니다. Docker 환경은 `POSTGRES_PASSWORD`, `AURA_ADMIN_TOKEN`을 환경변수로 설정한 후 `docker compose up --build`로 실행합니다. PostgreSQL/Docker 실서버 검증은 아직 하지 않았습니다.
 
@@ -26,7 +26,7 @@ PostgreSQL은 `DATABASE_URL=postgresql+psycopg://...`로 연결합니다. 신규
 - PDF에 숫자가 없는 영역별 가중치·IF 혼합비·교차 점수 변환은 `backend/config.json`의 실험 설정입니다. 최초 초안의 대체 D 산식은 PDF 수령 후 교체했습니다.
 - `backend/agent.py`: 읽기 전용 도구 7개, 실제 Responses tool loop, 호출·반복 상한, 캐시, 주장별 evidence_ids, 숫자/날짜와 SQL 원장 재조회 검증, 별도 Safety Gate, 오류 예외 등록·감사 로그.
 - 지급 승인/거절/보류 도구는 없습니다. 자동 종료는 추가 이상징후 조사 종료에 한정합니다. 고위험·결측·검증 실패·권한 위반은 담당자 검토로 보냅니다.
-- `dist/aura.*`: 관제·예외·상세·관리 화면. 기존 JS 분석/차트는 `dist/legacy.html`에 보존했습니다.
+- `dist/aura.*`: 관제·예외·상세·관리 화면. 청구 검증 홈과 JS 분석·차트의 진입점은 `dist/index.html`입니다.
 - `backend/evaluation.py`: 동일 평가 고객의 A/B/C 실행, C 5회 비교, 목표 대비 결과, 블라인드 평가용 익명 순서 자료. LLM 미연결 A/C는 미실행입니다.
 
 내부 필드 `id/service_date/kcd_code/receipt_id/actual_cost/claimed_amount/component`는 PDF의 `*_id/visit_date/disease_code/receipt_no/total_cost/claim_amount/claim_type`에 대응합니다. 진료비 항목은 component로 구분하며, 정식 영수증 항목 테이블은 없습니다.

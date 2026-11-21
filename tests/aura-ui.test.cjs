@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {JSDOM}=require('jsdom');
 test('AURA offline hosting shows connection setup without fabricated statistics',async()=>{
- const dom=new JSDOM(fs.readFileSync('dist/index.html','utf8'),{url:'https://example.test/',runScripts:'outside-only'});
+ const dom=new JSDOM(fs.readFileSync('dist/aura.html','utf8'),{url:'https://example.test/',runScripts:'outside-only'});
  dom.window.fetch=async()=>{throw Error('offline');};
  dom.window.eval(fs.readFileSync('dist/aura.js','utf8'));
  await new Promise(r=>setTimeout(r,20));
@@ -12,7 +12,7 @@ test('AURA offline hosting shows connection setup without fabricated statistics'
  dom.window.close();
 });
 test('AURA control center renders API counts and escapes review data',async()=>{
- const dom=new JSDOM(fs.readFileSync('dist/index.html','utf8'),{url:'https://example.test/',runScripts:'outside-only'});
+ const dom=new JSDOM(fs.readFileSync('dist/aura.html','utf8'),{url:'https://example.test/',runScripts:'outside-only'});
  const responses={'/api/health':{dataset:{people:500},llm_configured:false,spec_note:'실험용'},'/api/control':{total:12,closed_auto:8,needs_review:4,automation_rate:2/3,running:0,errors:0,safety_blocks:0,average_ms:3},'/api/investigations?queue=true':[{person_id:'<script>bad</script>',route:'detailed_review',scores:{S_overall:80},reasons:['check'],status:'needs_review'}]};
  dom.window.fetch=async path=>({ok:true,json:async()=>responses[path]});
  dom.window.eval(fs.readFileSync('dist/aura.js','utf8'));
@@ -24,7 +24,7 @@ test('AURA control center renders API counts and escapes review data',async()=>{
 });
 
 test('deployed API address is used and connection settings remain accessible',async()=>{
- const dom=new JSDOM(fs.readFileSync('dist/index.html','utf8'),{url:'https://example.test/',runScripts:'outside-only'});
+ const dom=new JSDOM(fs.readFileSync('dist/aura.html','utf8'),{url:'https://example.test/',runScripts:'outside-only'});
  const seen=[];
  dom.window.AURA_CONFIG={apiBase:'https://api.example.test'};
  dom.window.fetch=async path=>{seen.push(path);return {ok:true,json:async()=>path.endsWith('/api/health')?{dataset:null,llm_configured:false}:path.includes('/api/investigations')?[]:{total:0,closed_auto:0,needs_review:0,running:0,errors:0,safety_blocks:0}};};
