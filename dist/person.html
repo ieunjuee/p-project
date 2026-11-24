@@ -11,15 +11,19 @@
   <script src="vendor/sql-wasm.js" defer></script>
   <script src="person-engine.js" defer></script>
   <script src="person-sql.js" defer></script>
+  <script src="charts.js" defer></script>
   <script src="person-app.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">본문으로 이동</a>
+  <header class="intake-bar"><div>
+    <a class="intake-brand" href="#home"><span class="brand-mark" aria-hidden="true">ı<span>ı</span>ı</span>InsureLens</a>
+  </div></header>
   <aside class="sidebar" aria-label="주 메뉴">
-    <a class="brand" href="#"><span class="brand-mark">ı<span>ı</span>ı</span><span>InsureLens<small>보험 이력 확인</small></span></a>
+    <a class="brand" href="#home"><span class="brand-mark">ı<span>ı</span>ı</span><span>InsureLens<small>보험 이력 확인</small></span></a>
     <div class="workspace"><span class="workspace-icon">IL</span><div>보험 청구 심사<small>자동차보험 + 의료보험</small></div></div>
     <div class="nav-label">WORKSPACE</div>
-    <nav id="navigation"><a href="index.html">기존 청구 단위 데모</a></nav>
+    <nav id="navigation"><a href="legacy.html">기존 청구 단위 데모</a></nav>
     <div class="sidebar-note"><span class="pulse"></span> 한 사람의 보험 이력을<div>자동차와 의료를 합쳐서 보고<br>확인할 항목을 정리합니다.</div></div>
     <div class="sidebar-bottom"><span class="avatar">심</span><div>보험 심사 담당자<small>검토 지원 모드</small></div></div>
   </aside>
@@ -31,6 +35,9 @@
     <main id="main" tabindex="-1"></main>
     <footer><span>InsureLens · 보험 이력 확인</span><span>위험도는 확인 순서를 정하는 참고 지표이며, 지급 여부는 담당자가 결정합니다.</span></footer>
   </div>
+  <dialog id="settings-dialog" aria-labelledby="settings-title"><div class="dialog-head"><div><span class="eyebrow">ANALYSIS SETTINGS</span><h2 id="settings-title">탐지 기준 조정</h2></div><button class="icon-button close-dialog" type="button" aria-label="닫기">×</button></div><p class="muted">실험용 기준입니다. 변경하면 사람 전체를 다시 계산하고, 이전 결과와 인원 변화를 알려 줍니다.</p><form id="settings-form"></form></dialog>
+  <dialog id="data-dialog" aria-labelledby="data-title"><div class="dialog-head"><div><span class="eyebrow">DATA SOURCE</span><h2 id="data-title">분석할 데이터를 선택하세요</h2></div><button class="icon-button close-dialog" type="button" aria-label="닫기">×</button></div><p class="muted">SQLite 파일(.db)을 올리거나, 가상 데이터 500명으로 시작하세요.</p><label class="dropzone" for="db-file"><strong>SQLite 파일 선택</strong><span>클릭해서 파일을 고르세요</span><small>.db · 최대 50MB · person, med_claim, auto_accident, auto_claim 테이블</small></label><input id="db-file" type="file" accept=".db,.sqlite,.sqlite3" hidden><div id="upload-error" class="error" role="alert" hidden></div><div class="dialog-actions"><button class="button" type="button" id="use-sample">가상 500명 불러오기</button><button class="button primary close-dialog" type="button">현재 데이터로 돌아가기</button></div></dialog>
+  <dialog id="evidence-dialog" aria-labelledby="evidence-title"><div class="dialog-head"><h2 id="evidence-title">설명 엔진에 전달하는 근거</h2><button class="icon-button close-dialog" type="button" aria-label="닫기">×</button></div><p class="muted">선택한 사람의 분석 결과입니다. 점수와 위험도는 코드가 정한 값입니다.</p><pre id="evidence-json"></pre></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="loading" hidden><span class="spinner"></span><strong>가상 데이터를 계산하고 있습니다</strong><span>이력 모으기 → 지표 계산 → 교차 확인 → 위험도</span></div>
   <noscript>이 페이지를 사용하려면 브라우저에서 JavaScript를 켜 주세요.</noscript>

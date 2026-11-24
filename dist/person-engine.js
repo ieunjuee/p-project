@@ -577,10 +577,30 @@
     };
   }
 
+  /** 지표 한 개를 쉬운 문장으로 풀어 씁니다. 숫자는 관측값, 기준값, 설정값만 씁니다(수치 검증을 통과해야 하므로). */
+  function signalSentence(s, cfg) {
+    const o = s.observed, t = s.threshold, top = Math.round((1 - cfg.costPercentile) * 100);
+    if (o === null) {
+      return s.id === 'med_gap' ? `같은 병명 청구가 ${cfg.medGapMinClaims}건 미만이라 진료 간격을 비교하지 못했습니다.` : '사고가 1건 이하라 사고 간격을 비교하지 못했습니다.';
+    }
+    return ({
+      med_count: `같은 병명으로 ${cfg.medWindowDays}일 안에 최대 ${o}회 진료받았습니다. ${t}회 이상이면 의심 신호로 봅니다.`,
+      med_gap: `같은 병명 진료의 평균 간격이 ${o}일입니다. ${t}일보다 짧으면 의심 신호로 봅니다.`,
+      med_cost: `같은 병명, 같은 치료 종류 중 금액이 상위 ${top}%에 드는 청구가 ${o}건입니다. ${t}건 이상이면 의심 신호로 봅니다.`,
+      med_repeat: `같은 영수증, 또는 같은 날 같은 병원 같은 금액으로 ${t}번 이상 청구한 기록이 있으면 의심 신호로 봅니다. 해당하는 청구는 ${o}건입니다.`,
+      med_hospital: `같은 병명으로 ${cfg.medWindowDays}일 안에 ${o}곳의 병원을 이용했습니다. ${t}곳 이상이면 의심 신호로 봅니다.`,
+      auto_count: `${cfg.autoWindowDays}일 안에 사고가 최대 ${o}번 있었습니다. ${t}번 이상이면 의심 신호로 봅니다.`,
+      auto_gap: `가장 가까운 두 사고의 간격이 ${o}일입니다. ${t}일보다 짧으면 의심 신호로 봅니다.`,
+      auto_treat: `접촉 사고인데 치료 기간이 긴(상위 ${top}% 경계 초과) 대인 치료비 청구가 ${o}건입니다. 하나라도 있으면 의심 신호로 봅니다.`,
+      auto_cost: `같은 사고 유형 중 수리비가 상위 ${top}%에 드는 청구가 ${o}건입니다. 하나라도 있으면 의심 신호로 봅니다.`,
+      auto_repeat: `같은 상대방이나 같은 정비소의 사고, 또는 같은 사고의 같은 종류 청구가 ${t}번 이상이면 의심 신호로 봅니다. 해당하는 건은 ${o}건입니다.`,
+    })[s.id] || `${s.name}: ${o}`;
+  }
+
   /** API 미연결 시 사용하는 설명. 모든 수치는 위 근거에서만 가져옵니다. */
   function demoExplain(e) {
     const hits = [...e.medical_signals, ...e.auto_signals].filter((s) => s.hit);
-    const basis = hits.map((s) => `${s.name}: 관측 ${s.observed} / 기준 ${s.threshold} (${s.note})`);
+    const basis = hits.map((s) => `${s.name}: ${signalSentence(s, e.config)}`);
     for (const link of e.cross_links) {
       if (link.verdict !== '정상 분리 청구') basis.push(`${link.verdict} — ${link.reason} (사고 ${link.accident_id}, 청구 ${link.claim_id})`);
     }
@@ -619,6 +639,7 @@
     addNumber(e.paid_total.med); addNumber(e.paid_total.auto);
     addNumber(e.overlap_amount); addNumber(Math.round(e.overlap_ratio * 100));
     for (const value of Object.values(e.config)) addNumber(value);
+    addNumber(Math.round((1 - e.config.costPercentile) * 100)); // 문장 속 '상위 N%'
     for (const link of e.cross_links) {
       addNumber(link.med_paid); addNumber(link.auto_paid);
       ids.add(link.accident_id); ids.add(link.claim_id);
@@ -667,7 +688,7 @@
     };
   }
 
-  const api = { defaults, analyzePerson, analyzeAll, assemble, summarize, evidence, decision, demoExplain, demoAsk, demoRequest, composeRequest, sanitizeRequest, demoGap, verifyExplanation, evaluate, profile, buildReference, percentile, money, diffDays };
+  const api = { defaults, analyzePerson, analyzeAll, assemble, summarize, evidence, decision, demoExplain, signalSentence, demoAsk, demoRequest, composeRequest, sanitizeRequest, demoGap, verifyExplanation, evaluate, profile, buildReference, percentile, money, diffDays };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PersonLens = api;
 })(typeof window !== 'undefined' ? window : globalThis);
