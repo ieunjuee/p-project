@@ -53,7 +53,7 @@ npm test                     # 단위 테스트
 | 증빙 요청서 초안 | 보류와 정지 권고 건에 고객에게 요청할 서류와 안내 문장을 작성 (담당자가 확인 후 직접 발송, 시스템은 보내지 않음) | 지표와 판정별 서류 목록으로 작성 |
 | 판단 불가 보완 | 영수증이 비어 판단 불가인 건에서 무엇을 확인하면 판단되는지 정리 | 비어 있는 청구와 확인 방법을 정리 |
 
-`/api/person-assist`는 로컬 LLM(기본 Qwen3 14B)으로 답을 만들고, 연결이 안 되면 데모 응답을 돌려줍니다. LLM 응답 속 응답 속 숫자와 번호는 `verifyExplanation`이 코드 계산 결과와 대조하고, 다르면 데모 응답으로 대체합니다. 결과 제안(지급, 지급 보류, 지급 정지 권고)은 코드가 정하며, 낮음은 지급, 중복 확실은 정지 권고, 나머지는 보류입니다. 최종 결정은 담당자가 합니다.
+`/api/person-assist`는 로컬 LLM(기본 Gemma 4 12B)으로 답을 만들고, 연결이 안 되면 데모 응답을 돌려줍니다. LLM 응답 속 응답 속 숫자와 번호는 `verifyExplanation`이 코드 계산 결과와 대조하고, 다르면 데모 응답으로 대체합니다. 결과 제안(지급, 지급 보류, 지급 정지 권고)은 코드가 정하며, 낮음은 지급, 중복 확실은 정지 권고, 나머지는 보류입니다. 최종 결정은 담당자가 합니다.
 
 ### 역할 구분
 
@@ -92,11 +92,12 @@ npm test                     # 단위 테스트
 
 GitHub Pages와 기본 정적 페이지는 **데모 설명 모드**입니다. 검증된 수치를 정해진 문장으로 설명하며 실제 LLM 출력으로 표시하지 않습니다. GitHub Pages는 이 프로젝트의 Node.js 서버를 실행하지 않습니다.
 
-사람 단위 화면(`person.html`)의 LLM은 **내 컴퓨터에서 실행하는 로컬 모델**을 OpenAI 호환 주소로 호출합니다. 기본값은 Ollama의 Qwen3 14B입니다.
+사람 단위 화면(`person.html`)의 LLM은 **내 컴퓨터에서 실행하는 로컬 모델**을 OpenAI 호환 주소로 호출합니다. 기본값은 Ollama의 Gemma 4 12B입니다(`ollama pull`로 약 8.0GB, GPU 12GB급에서 쓰는 것을 전제로 선택).
 
 ```sh
-ollama pull qwen3:14b
+ollama pull gemma4:12b
 OLLAMA_CONTEXT_LENGTH=8192 ollama serve   # 기본 문맥 길이(4096)는 근거 JSON이 긴 사람에게 모자랄 수 있습니다
+# Windows PowerShell: $env:OLLAMA_CONTEXT_LENGTH=8192; ollama serve (이미 켜진 Ollama는 종료 후 다시 켜야 적용됩니다)
 cp .env.example .env                      # 주소와 모델 이름을 바꿀 때만 수정
 node server.mjs                           # http://localhost:4177/ (검증 홈으로 이동합니다)
 ```
@@ -104,14 +105,15 @@ node server.mjs                           # http://localhost:4177/ (검증 홈�
 | 환경변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `LLM_BASE_URL` | `http://localhost:11434/v1` | LM Studio, vLLM 등 OpenAI 호환 서버면 주소만 바꿉니다 |
-| `LLM_MODEL` | `qwen3:14b` | 다른 오픈소스 모델 비교 시 이름만 바꿉니다 |
+| `LLM_MODEL` | `gemma4:12b` | 다른 오픈소스 모델 비교 시 이름만 바꿉니다 |
 | `LLM_API_KEY` | 비움 | 로컬 모델은 필요 없습니다 |
-| `LLM_TIMEOUT_MS` | `120000` | 14B 모델의 첫 응답이 느릴 수 있어 길게 둡니다 |
+| `LLM_TIMEOUT_MS` | `120000` | 모델 첫 로드와 숫자가 틀렸을 때의 재생성(최대 3번) 때문에 길게 둡니다 |
 | `LLM_MODE=demo` | 없음 | LLM을 부르지 않고 데모 설명만 씁니다 |
+| `LLM_EXPLAIN_CAUSES=1` | 없음(꺼짐) | 상세 설명이 원인 후보(causes)까지 쓰게 합니다. 모델 실험에서 시험하지 않은 문구라 처음 보는 사람 데이터로 재시험한 뒤 켜는 것을 권합니다 |
 
-요청은 `temperature 0`, 구조화 JSON 형식, Qwen3의 생각 단계 끄기(`/no_think`)로 보내고, 응답에 `<think>` 구간이 섞여도 무시합니다. 호출에는 고객 ID와 의료기관 ID를 제외한 분석 JSON만 전달합니다. 연결이 안 되거나 응답이 틀리면 데모 설명으로 바뀌고 분석은 유지됩니다. 기존 청구 단위 화면(`index.html`)의 `/api/explain`만 아직 `OPENAI_API_KEY`를 씁니다.
+요청은 `temperature 0`, 구조화 JSON 형식, 생각 단계 끄기(`/no_think`와 `reasoning_effort: none`)로 보내고, 응답에 `<think>` 구간이 섞여도 무시합니다. 호출에는 고객 ID와 의료기관 ID를 제외한 분석 JSON만 전달합니다. 연결이 안 되거나 응답이 틀리면 데모 설명으로 바뀌고 분석은 유지됩니다. 기존 청구 단위 화면(`index.html`)의 `/api/explain`만 아직 `OPENAI_API_KEY`를 씁니다.
 
-**검증 상태:** 실제 Qwen3 14B 호출은 시험하지 못했습니다. 요청 형식, 응답 처리, 연결 실패 시 데모 전환은 가짜 로컬 서버와 모의 fetch로 확인했습니다. 실제 모델의 출력 품질과 JSON 형식 준수는 직접 돌려 확인해야 합니다.
+**검증 상태:** 요청 형식, 응답 처리, 연결 실패 시 데모 전환은 가짜 로컬 서버와 모의 fetch로 확인했습니다. 실제 모델 호출은 소량(상세 설명 5명 등)으로 확인했고, 모델 간 정량 비교(`tools/evaluate-llm.mjs`)의 숫자는 가상 데이터와 코드가 정한 근거 기준입니다. 출력 품질과 원인 후보의 타당성은 담당자가 직접 판단해야 합니다.
 
 ## 데이터와 분석 범위
 

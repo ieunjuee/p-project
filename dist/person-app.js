@@ -118,7 +118,8 @@ function explanationPanel(r) {
     <span class="badge ${x && x.provider === 'api' ? 'green' : 'gray'}">${x && x.provider === 'api' ? 'LLM 연결' : '데모 설명'}</span></div>
     ${x ? `<div class="ai-result"><h3>01 · 요약</h3><p>${esc(x.summary)}</p>
       <h3>02 · 근거</h3><ul>${x.basis.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>
-      <h3>03 · 확인할 항목</h3><ul>${x.checks.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+      ${Array.isArray(x.causes) && x.causes.length ? `<h3>03 · 원인 후보 <span class="muted">(확정이 아닌 가능한 설명)</span></h3><ul>${x.causes.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
+      <h3>${Array.isArray(x.causes) && x.causes.length ? '04' : '03'} · 확인할 항목 (권장 조치)</h3><ul>${x.checks.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
       <p class="provider">${x.provider === 'api' ? 'LLM이 코드가 만든 근거 JSON을 바탕으로 작성했습니다.' : 'LLM 미연결 · 코드가 계산한 수치로 만든 데모 설명입니다.'}</p></div>
       ${state.verification ? `<div class="info-note ${state.verification.ok ? '' : 'warning'}">수치 검증: ${state.verification.ok
         ? '설명에 나온 모든 숫자와 근거 번호가 코드 계산 결과와 일치합니다.'
@@ -265,7 +266,7 @@ function overview() {
       ${metric('판단 불가', f(s['판단 불가']), '명', '영수증 번호가 비어 중복 여부를 알 수 없음')}</div>
     <div class="dashboard-grid"><div class="left-column">
       <section class="panel"><div class="panel-head chart-panel-head"><div><h2>월별 청구 추이</h2><p>청구 발생일 기준 · 의료와 자동차 청구 합계</p></div>${chartSwitch('trend', [['count', '건수'], ['total', '금액']], '월별 추이 지표')}</div>${noHelp(C.monthlyHTML(rows, state.chartViews.trend))}<div class="chart-bottom"><span>${months[0].month} — ${months.at(-1).month}</span><span>월별 집계 · 단위: ${state.chartViews.trend === 'count' ? '건' : '원'}</span></div></section>
-    </div><div class="right-column">${briefing()}
+    </div><div class="right-column">${aiBriefing()}
       <section class="panel section-gap"><div class="panel-head"><h2>분석 기준 안내</h2>${icon('shield')}</div><div class="panel-body"><p class="muted" style="font-size:11px;line-height:1.95">점수는 의심 신호가 걸린 개수 × 20점이고, 종합 점수는 의료 점수와 자동차 점수 중 큰 값입니다. 같은 비용을 둘 다 받은 것이 확실하면(중복 확실) 점수와 상관없이 <strong>높음</strong>입니다.</p><button class="button link section-gap" data-action="settings">탐지 기준 조정 ${icon('arrow')}</button></div></section>
       <section class="panel section-gap"><div class="panel-head"><div><h2>사고와 진료 교차 확인 결과</h2><p>해당 판정이 한 건이라도 있는 사람 수</p></div></div>
       <div class="horizontal-bars">${verdicts.map((v) => barRow(v, verdictCount(v), s.count, v === '중복 확실' ? '#d98c7a' : '#e6bd7a')).join('')}</div></section></div></div>
@@ -332,6 +333,81 @@ function listTab() {
     <div class="table-foot"><span role="status" aria-live="polite">${f(all.length)}명 중 ${all.length ? (state.page - 1) * 12 + 1 : 0}–${Math.min(state.page * 12, all.length)}명 · 위험도와 점수 높은 순</span>
       <div class="pagination"><button data-page="${Math.max(1, state.page - 1)}" ${state.page === 1 ? 'disabled' : ''} aria-label="이전 페이지">‹</button><span class="page-position">${state.page} / ${pages}</span><button data-page="${Math.min(pages, state.page + 1)}" ${state.page === pages ? 'disabled' : ''} aria-label="다음 페이지">›</button></div></div></section>
 `;
+}
+
+/* ---- 분석 개요 AI 해석: 기존 '오늘의 검토 브리핑'(briefing, 코드가 만든 고정 문장)을 AI 해석으로 바꾼다 ----
+ * 흐름: 코드가 지표를 계산(IndicatorLens.overviewEvidence) -> 서버가 LLM에게 해석, 원인 후보, 권장 조치를 쓰게 함
+ *       -> 코드가 숫자만 검사 -> 통과하면 AI 해석을 보여 주고, 실패하거나 서버가 없으면 기존 고정 브리핑(briefing)을 그대로 보여 준다.
+ * 비용이 크므로(수 초~1분) 버튼을 눌렀을 때만 만든다. */
+const IE = window.IndicatorLens;
+
+function overviewInput() {
+  // overview() 와 같은 계산(신호별 걸린 사람 수, 교차 판정 사람 수)을 AI 근거용으로 다시 모은 것
+  const res = state.analysis.results, s = state.analysis.summary, rows = claimRows();
+  const hit = (kind, i) => res.filter((r) => r.signals[kind][i].hit).length;
+  const verdictPeople = (v) => res.filter((r) => r.cross.links.some((l) => l.verdict === v) || (v === '고지 확인' && r.cross.links.some((l) => l.prior.length))).length;
+  return {
+    people: s.count, risk: s,
+    verdicts: ['중복 확실', '중복 의심', '고지 확인', '판정 불가'].map((name) => ({ name, people: verdictPeople(name) })),
+    signals: [...res[0].signals.med.map((x, i) => ({ name: '의료 · ' + x.name, people: hit('med', i) })),
+      ...res[0].signals.auto.map((x, i) => ({ name: '자동차 · ' + x.name, people: hit('auto', i) }))],
+    months: C.monthlySeries(rows),
+    dataThrough: rows.map((x) => x.claim_date).sort().at(-1) || '',
+    medianAmount: C.quantile(rows.map((x) => x.amount), .5),
+  };
+}
+
+/** 데이터를 바꾸면(state.analysis 가 바뀌면) 이전 AI 해석은 버린다. */
+const aiState = () => (state.briefingAI && state.briefingAI.analysis === state.analysis ? state.briefingAI : null);
+
+function aiBriefing() {
+  const b = aiState();
+  const list = (items) => (items.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="muted">해당 없음</p>');
+  if (b && b.status === 'done' && b.result.provider === 'api') {
+    const x = b.result;
+    return `<section class="panel briefing"><div class="briefing-head">${icon('spark')}<h2>AI 지표 해석</h2><span class="badge green">LLM 연결</span></div>
+      <h3>01 · 확인된 사실</h3>${list(x.facts)}
+      <h3>02 · 업무적 의미</h3><p>${esc(x.meaning)}</p>
+      <h3>03 · 원인 후보 <span class="muted">(확정이 아닌 가능한 설명)</span></h3>${list(x.causes)}
+      <h3>04 · 권장 조치</h3>${list(x.actions)}
+      <h3>05 · 모르는 점과 한계</h3><p>${esc(x.uncertainty)}</p>
+      <div class="info-note">수치 검증: 답에 나온 숫자가 모두 코드 계산 값과 일치합니다(${x.attempts}번째 시도에 통과). 검증은 <strong>숫자만</strong> 확인합니다. 해석과 원인 후보가 타당한지는 담당자가 판단해야 합니다.</div>
+      <button class="button link section-gap" data-action="briefing">다시 생성</button></section>`;
+  }
+  const busy = b && b.status === 'busy';
+  return briefing() + `<div class="info-note section-gap">AI가 이 지표를 읽고 해석, 원인 후보, 권장 조치를 쓰게 할 수 있습니다. 숫자는 코드가 검사합니다.
+    <button class="button primary" data-action="briefing" ${busy ? 'disabled' : ''}>${busy ? 'AI 해석 중... (최대 1~2분)' : 'AI 해석 생성'}</button>
+    ${b && b.notice ? `<br>${esc(b.notice)}` : ''}</div>`;
+}
+
+async function runBriefing() {
+  const analysis = state.analysis;
+  state.briefingAI = { analysis, status: 'busy' }; render();
+  const evidence = IE.overviewEvidence(overviewInput());
+  let result, notice = '';
+  try {
+    if (!window.INSURELENS_SERVER) throw Error('서버 미연결');
+    // 서버가 LLM을 최대 3번까지 부를 수 있어 사람 설명(30초)보다 길게 기다린다
+    const response = await fetch('/api/interpret-overview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ evidence }), signal: AbortSignal.timeout(180000),
+    });
+    if (!response.ok) throw Error('API 요청 실패');
+    result = await response.json();
+    if (result.provider === 'api' && (!Array.isArray(result.facts) || typeof result.meaning !== 'string')) throw Error('잘못된 응답');
+  } catch {
+    result = { provider: 'demo' };
+    notice = window.INSURELENS_SERVER ? 'LLM 연결에 실패해 기존 고정 브리핑을 표시합니다.' : 'LLM 서버에 연결되어 있지 않아 AI 해석을 만들 수 없습니다. 기존 고정 브리핑을 표시합니다.';
+  }
+  if (result.provider === 'api') { // 화면에서도 한 번 더 검사한다(서버 응답을 그대로 믿지 않는다)
+    const bad = IE.validateNumbers(result, evidence);
+    if (bad.length) { result = { provider: 'demo' }; notice = `AI 답 속 숫자(${bad.slice(0, 5).join(', ')})가 코드 계산과 달라 기존 고정 브리핑을 표시합니다.`; }
+  } else if (!notice) {
+    notice = result.replaced ? 'AI 답에 코드 계산에 없는 숫자가 반복되어 기존 고정 브리핑을 표시합니다.' : 'AI 해석을 만들지 못해 기존 고정 브리핑을 표시합니다.';
+  }
+  if (analysis !== state.analysis) return; // 도중에 데이터를 바꿨으면 결과를 버린다
+  state.briefingAI = { analysis, status: 'done', result, notice };
+  render();
 }
 
 function briefing() {
@@ -561,7 +637,8 @@ async function explain() {
     if (!window.INSURELENS_SERVER) throw Error('서버 미연결');
     const response = await fetch('/api/explain-person', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ evidence: payload }), signal: AbortSignal.timeout(30000),
+      // [기존 보존] signal: AbortSignal.timeout(30000) — 서버가 숫자가 틀리면 최대 3번까지 다시 쓰게 해서 120초로 늘렸다
+      body: JSON.stringify({ evidence: payload }), signal: AbortSignal.timeout(120000),
     });
     if (!response.ok) throw Error('API 요청 실패');
     result = await response.json();
@@ -633,6 +710,7 @@ document.addEventListener('click', (ev) => {
   if (el.dataset.tab) go(el.dataset.tab);
   if (el.dataset.list) { resetFilters(); state.priority = el.dataset.list; go('list'); }
   if (el.dataset.action === 'explain') explain();
+  if (el.dataset.action === 'briefing') runBriefing();
   if (el.dataset.action === 'request') assist('request');
   if (el.dataset.action === 'gap') assist('gap');
   if (el.dataset.ask) assist('ask', el.dataset.ask);

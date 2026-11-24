@@ -28,7 +28,7 @@ test('로컬 모델 주소와 모델 이름으로 요청하고 <think> 구간은
   };
   const out = await assistPerson('ask', evidence, '점수는?', { fetch: fetchMock });
   assert.equal(seen.url, 'http://localhost:11434/v1/chat/completions');
-  assert.equal(seen.body.model, 'qwen3:14b');
+  assert.equal(seen.body.model, 'gemma4:12b');
   assert.equal(seen.body.temperature, 0);
   assert.ok(!seen.headers.Authorization);
   assert.match(seen.body.messages[0].content, /no_think/);
