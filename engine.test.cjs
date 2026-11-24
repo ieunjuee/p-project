@@ -55,36 +55,14 @@ test('LLM sends structured selected evidence using server key, accepts schema re
   const {explainClaim}=await import('../llm.mjs');const a=E.analyze(E.sample(100).rows),evidence={...E.evidence(a.results[0],a),customer_id:'private'};let request;
   const expected={summary:'분석 요약',basis:['제공된 근거'],checks:['서류 확인'],answer:null};
   const fetch=async(url,options)=>{request={url,...options};return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify(expected)}}]})};};
-  // [기존 보존] 기본값이 OpenAI였을 때의 호출: const result=await explainClaim(evidence,'',{key:'test-only',fetch});
-  const result=await explainClaim(evidence,'',{provider:'openai',key:'test-only',fetch});
+  const result=await explainClaim(evidence,'',{key:'test-only',fetch});
   assert.equal(result.provider,'api');const sent=JSON.parse(request.body),data=JSON.parse(sent.messages[1].content);
   assert.equal(data.analysis.score,evidence.score);assert.equal(data.analysis.customer_id,undefined);assert.equal(sent.response_format.json_schema.strict,true);
   assert.equal(request.headers.Authorization,'Bearer test-only');
 });
-test('Ollama provider sends the schema with thinking off, needs no key, and reports connection status',async()=>{
-  const {explainClaim,llmStatus}=await import('../llm.mjs');const a=E.analyze(E.sample(100).rows),evidence=E.evidence(a.results[0],a);let request;
-  const expected={summary:'로컬 요약',basis:['제공된 근거'],checks:['서류 확인'],answer:null};
-  const fetch=async(url,options)=>{request={url,...options};return {ok:true,json:async()=>({message:{content:JSON.stringify(expected)}})};};
-  const result=await explainClaim(evidence,'',{provider:'ollama',model:'qwen3:14b',url:'http://localhost:11434',fetch});
-  assert.equal(result.provider,'api');assert.equal(result.engine,'ollama');assert.equal(request.url,'http://localhost:11434/api/chat');
-  const sent=JSON.parse(request.body);assert.equal(sent.think,false);assert.equal(sent.stream,false);assert.equal(sent.model,'qwen3:14b');assert.equal(sent.format.required.length,4);
-  assert.equal(request.headers.Authorization,undefined);assert.equal(JSON.parse(sent.messages[1].content).analysis.claim_id,evidence.claim_id);
-  assert.equal((await llmStatus({provider:'ollama',fetch:async()=>({ok:true})})).connected,true);
-  assert.equal((await llmStatus({provider:'ollama',fetch:async()=>{throw Error('down');}})).connected,false);
-});
-test('default provider is the local Ollama model',async()=>{
-  const {explainClaim}=await import('../llm.mjs');const saved=process.env.LLM_PROVIDER;delete process.env.LLM_PROVIDER;
-  try{
-    const a=E.analyze(E.sample(100).rows),evidence=E.evidence(a.results[0],a);let request;
-    const fetch=async(url,options)=>{request={url,...options};return {ok:true,json:async()=>({message:{content:JSON.stringify({summary:'요약',basis:['근거'],checks:['확인'],answer:null})}})};};
-    const result=await explainClaim(evidence,'',{fetch});
-    assert.equal(result.engine,'ollama');assert.ok(request.url.endsWith('/api/chat'));
-  }finally{if(saved!==undefined)process.env.LLM_PROVIDER=saved;}
-});
 test('invalid LLM evidence is rejected and no key returns a demo',async()=>{
   const {explainClaim}=await import('../llm.mjs');await assert.rejects(()=>explainClaim({}),/근거 형식/);
-  const a=E.analyze(E.sample(80).rows),p=E.evidence(a.results[0],a);// [기존 보존] 기본값이 OpenAI였을 때의 검사: assert.equal((await explainClaim(p,'',{key:''})).provider,'demo');
-  assert.equal((await explainClaim(p,'',{provider:'openai',key:''})).provider,'demo');
+  const a=E.analyze(E.sample(80).rows),p=E.evidence(a.results[0],a);assert.equal((await explainClaim(p,'',{key:''})).provider,'demo');
 });
 test('identical training distribution does not flag every claim as unusual',()=>{
   const rows=Array.from({length:100},(_,i)=>claim(String(i),new Date(Date.UTC(2025,0,i+1)).toISOString().slice(0,10),100,'C'+i));
