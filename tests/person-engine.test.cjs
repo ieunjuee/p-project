@@ -130,6 +130,24 @@ test('점수는 걸린 지표 수에 비례하고 두 영역 중 큰 값을 쓴�
   assert.equal(r.risk, '높음');
 });
 
+test('지표 문장은 쉬운 말로 쓰고, 그 문장도 수치 검증을 통과한다', () => {
+  const r = run({
+    auto_accident: [accident('A1', '2026-03-01', { counterparty_id: 'C7' }),
+      accident('A2', '2026-03-20', { counterparty_id: 'C7' }),
+      accident('A3', '2026-04-05', { counterparty_id: 'C7' })],
+    auto_claim: [],
+  }, { costPercentile: 0.85 });
+  const all = [...r.signals.med, ...r.signals.auto];
+  for (const s of all) {
+    const text = E.signalSentence(s, r.config);
+    assert.ok(text.length > 10 && !/관측|기준 \d/.test(text), `${s.id}: ${text}`);
+  }
+  const e = E.evidence(r), demo = E.demoExplain(e);
+  assert.ok(demo.basis.some((b) => b.includes('사고가 최대 3번')), demo.basis.join(' | '));
+  assert.equal(E.verifyExplanation(e, { summary: '상위 15%에 드는 청구입니다.', basis: [], checks: [] }).ok, true);
+  assert.equal(E.verifyExplanation(e, demo).ok, true);
+});
+
 test('설명 검증기는 지어낸 수치와 번호를 잡는다', () => {
   const r = run({ med_claim: [med('M1', '2026-03-01')] });
   const e = E.evidence(r);
