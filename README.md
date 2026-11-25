@@ -1,60 +1,141 @@
-# InsureLens AURA 2.0
+# p-project · InsureLens
 
-실손의료보험·자동차보험 합성 원장을 조사하는 FastAPI + 관계형 DB + JavaScript 관제 앱입니다. PDF(2026-10-22, 8쪽)의 지표·시나리오 비율·중복금액·Overall을 반영합니다. **실제 LLM 미연결 실행은 규칙 기반 조사이며 자율 Agent 실행으로 표시하지 않습니다.**
+보험 청구 데이터를 분석하고, 근거 설명과 담당자의 검토를 돕는 JavaScript 웹페이지입니다.
 
-## 실행
+**과제:** 데이터 기반 의사결정 + LLM 설명 지원 (보험사기 예방)
 
-```powershell
-python -m pip install -r requirements.txt
-python -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
+- 현재 접속 가능한 데모: https://insurelens-review.andy46780040.chatgpt.site (소유자 계정 접근)
+- GitHub Pages 주소: https://ieunjuee.github.io/p-project/ (아래 Pages 설정 후 이용)
+
+## 보험 이력 확인: 사람 기준 화면 (2026-10 추가)
+
+기존 데모는 청구 한 건씩 점수를 매깁니다. 새로 추가한 `dist/person.html`은 **한 사람의 자동차보험 이력과 의료보험 이력을 함께** 보고, 같은 비용을 두 번 받았는지까지 확인합니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `data/schema.sql` | SQLite 6개 테이블 (person, kcd_master, med_claim, auto_accident, auto_claim, scenario_label) |
+| `data/build_db.py` | 모의 데이터 생성 (500명, 8개 시나리오) → `data/insure.db`, `dist/data/mock.json`, `dist/data/labels.json`(검증 탭 전용 정답표) |
+| `dist/person-sql.js` | **화면이 쓰는 계산.** 의료 지표 5개, 자동차 지표 5개, 사고-진료 교차 판정을 SQLite 쿼리(sql.js)로 계산 |
+| `dist/person-engine.js` | 점수, 위험도, 결과 제안을 정하는 부분과 LLM 근거 만들기. 같은 지표를 JS로도 계산해 SQL 결과와 대조하는 기준이자, SQLite를 못 불러올 때의 대체 계산 |
+| `dist/data/insure.db` | 화면용 SQLite DB (정답표 테이블 제외). `dist/vendor/sql-wasm.*`로 브라우저에서 엽니다 |
+| `dist/person-app.js` | 화면 5개: 분석 개요, 검토 대상, 상세 조회 · AI 설명, 분석 보고서, 검증 결과 |
+| `person-llm.mjs` | LLM 설명 요청. 점수에는 관여하지 않고 설명만 만듭니다 |
+| `tools/evaluate.mjs` | 정답표와 비교한 성능 출력 |
+| `tools/verify_sql.py` | 엔진 계산값을 SQL로 다시 계산해 대조 |
+
+```bash
+python3 data/build_db.py     # 모의 데이터 생성 (최초 1회)
+npm start                    # http://localhost:4177/ (검증 홈으로 이동합니다)
+node tools/evaluate.mjs      # 성능 확인
+python3 tools/verify_sql.py  # SQL 교차 검증
+npm test                     # 단위 테스트
 ```
 
-http://127.0.0.1:8000 에서는 브라우저가 청구를 자동 분류하고 담당자가 필요한 분류를 선택해 검토합니다. AURA 관제 화면은 http://127.0.0.1:8000/aura.html 에서 Administration → DB에 생성 → Control Center → 전체 자동 조사 시작 순서로 실행합니다. 데이터가 없으면 수치를 만들어 표시하지 않습니다. SQLite 파일은 `data/aura.sqlite3`에 보존되고 Git에서 제외됩니다.
+`dist/person.html`은 `data/insure.db`와 `data/mock.json`을 fetch 하므로 파일을 직접 열면 동작하지 않습니다. `npm start` 또는 정적 서버로 여세요.
 
-PostgreSQL은 `DATABASE_URL=postgresql+psycopg://...`로 연결합니다. 신규 스키마는 시작 시 생성합니다. 기존 스키마 업그레이드 마이그레이션은 별도 작업이 필요합니다. Docker 환경은 `POSTGRES_PASSWORD`, `AURA_ADMIN_TOKEN`을 환경변수로 설정한 후 `docker compose up --build`로 실행합니다. PostgreSQL/Docker 실서버 검증은 아직 하지 않았습니다.
+### 계산 방식
 
-실제 LLM 사용은 서버 환경변수에 `OPENAI_API_KEY`, `AURA_LLM_MODEL`을 지정합니다. `AURA_LLM_BASE_URL` 기본값은 `https://api.openai.com/v1`이며 `/responses`와 function calling을 지원해야 합니다. 로컬 모델도 해당 프로토콜을 지원하는 게이트웨이가 필요합니다. 키를 저장소·브라우저에 넣지 마세요. `.env.example`은 변수 목록이며 Python 서버가 `.env`를 자동으로 읽지는 않습니다.
+- 지표와 교차 판정은 브라우저 안의 SQLite(sql.js, WASM)에서 SQL로 계산합니다. 서버 없이 정적 파일만으로 동작하며, 서버는 LLM 호출에만 필요합니다.
+- `npm test`의 `person-sql.test.cjs`가 SQL 결과와 JS 계산 결과가 500명 전원에게 같은지 확인합니다. 화면 상단의 `계산: SQLite 쿼리` 배지로 어느 방식으로 계산했는지 볼 수 있고, SQLite를 불러오지 못하면 `계산: JS 대체`로 표시됩니다.
 
-원격 변경은 `AURA_ADMIN_TOKEN`이 필수입니다. 프론트엔드 연결 화면의 토큰 입력은 탭 세션에만 보관합니다. 별도 출처의 프론트엔드는 `AURA_ALLOWED_ORIGINS`에 정확한 URL을 설정합니다. GitHub Pages에서는 Python/DB가 실행되지 않습니다. HTTPS 백엔드를 별도로 배포하고 Pages 연결 화면에 주소를 넣어야 합니다. 운영 배포와 main 병합은 수행하지 않았습니다.
+- 의료 점수 = 걸린 의료 지표 수 ÷ 5 × 100, 자동차 점수도 같은 방식
+- 종합 점수 = 두 점수 중 큰 값
+- 위험도: 30점 미만 낮음, 30~60점 보통, 60점 이상 높음. **중복 확실은 점수와 무관하게 높음**
+- 중복 의심, 고지 확인, 기왕증이 있으면 최소 보통
+- 영수증 번호가 양쪽 모두 비어 중복 여부를 확인할 수 없으면 판단 불가
+- 기준값(8회, 3일, 상위 5%, 30점, 60점)은 **초안**이며 팀 합의와 재조정이 필요합니다
 
-## 구현과 경계
+### 담당자를 돕는 LLM 기능 3가지 (상세 조회 화면)
 
-- `backend/db.py`, `generator.py`: 핵심 6개 테이블, seed, 기본 500명/5,000 의료청구/600 사고, 고객별 300/200 분리. 라벨은 생성·평가에서만 읽습니다.
-- `backend/analysis.py`: 동일 질환 30일 횟수·평균 간격, 질환/진료유형별 비용 백분위, 반복 청구·기관 분산, 90일 사고 횟수·간격·유형·수리비·반복 상대방/정비소. 통계와 IF는 튜닝 고객으로만 학습합니다.
-- 날짜와 손상 코드로 사고·진료 후보를 연결하며 같은 병원/기간 중복은 보조 근거입니다. 교차 검증은 비용 항목과 지급액을 대조하고, 매칭에 사용한 청구를 재사용하지 않습니다.
-- PDF의 `D=sum(min(auto_paid,med_paid))`, `r_dup=D/사고 관련 의료 지급액 합`, `Overall=max(S_cross,.3*S_med+.3*S_auto+.4*S_cross)`를 코드로 계산합니다. 동일 영수증의 양쪽 실제 지급은 정밀 검토 대상이며 법적 사기 확정이 아닙니다.
-- PDF에 숫자가 없는 영역별 가중치·IF 혼합비·교차 점수 변환은 `backend/config.json`의 실험 설정입니다. 최초 초안의 대체 D 산식은 PDF 수령 후 교체했습니다.
-- `backend/agent.py`: 읽기 전용 도구 7개, 실제 Responses tool loop, 호출·반복 상한, 캐시, 주장별 evidence_ids, 숫자/날짜와 SQL 원장 재조회 검증, 별도 Safety Gate, 오류 예외 등록·감사 로그.
-- 지급 승인/거절/보류 도구는 없습니다. 자동 종료는 추가 이상징후 조사 종료에 한정합니다. 고위험·결측·검증 실패·권한 위반은 담당자 검토로 보냅니다.
-- `dist/aura.*`: 관제·예외·상세·관리 화면. 청구 검증 홈과 JS 분석·차트의 진입점은 `dist/index.html`입니다.
-- `backend/evaluation.py`: 동일 평가 고객의 A/B/C 실행, C 5회 비교, 목표 대비 결과, 블라인드 평가용 익명 순서 자료. LLM 미연결 A/C는 미실행입니다.
+| 기능 | 하는 일 | 데모 모드 |
+| --- | --- | --- |
+| 담당자 질문 | "왜 보류인가요?" 같은 질문에 근거 번호를 달아 답함 | 질문의 단어로 종류를 나눠 정해진 문장으로 답함 |
+| 증빙 요청서 초안 | 보류와 정지 권고 건에 고객에게 요청할 서류와 안내 문장을 작성 (담당자가 확인 후 직접 발송, 시스템은 보내지 않음) | 지표와 판정별 서류 목록으로 작성 |
+| 판단 불가 보완 | 영수증이 비어 판단 불가인 건에서 무엇을 확인하면 판단되는지 정리 | 비어 있는 청구와 확인 방법을 정리 |
 
-내부 필드 `id/service_date/kcd_code/receipt_id/actual_cost/claimed_amount/component`는 PDF의 `*_id/visit_date/disease_code/receipt_no/total_cost/claim_amount/claim_type`에 대응합니다. 진료비 항목은 component로 구분하며, 정식 영수증 항목 테이블은 없습니다.
+`/api/person-assist`는 로컬 LLM(기본 Gemma 4 12B)으로 답을 만들고, 연결이 안 되면 데모 응답을 돌려줍니다. LLM 응답 속 응답 속 숫자와 번호는 `verifyExplanation`이 코드 계산 결과와 대조하고, 다르면 데모 응답으로 대체합니다. 결과 제안(지급, 지급 보류, 지급 정지 권고)은 코드가 정하며, 낮음은 지급, 중복 확실은 정지 권고, 나머지는 보류입니다. 최종 결정은 담당자가 합니다.
 
-## 검증 결과와 남은 작업
+### 역할 구분
 
-2026-10-22 seed 42 실측은 `docs/benchmark.json`에 보존했습니다. 500명 전체 조사에서 오류 0, 자동 종료 419명(83.8%), 검토 81명. 규칙 기반 실행 결과이며 실제 LLM 성능이 아닙니다.
+점수와 위험도는 코드만 정합니다. LLM은 코드가 만든 근거 JSON을 받아 설명만 하고, 설명에 나온 숫자와 청구 번호는 `verifyExplanation`이 코드 계산 결과와 대조해 다르면 그 설명을 무효 처리합니다. 지급 여부는 담당자가 결정합니다.
 
-평가 고객 200명의 B군: 중복 보상 재현율 100%, 헷갈리는 정상 정밀 검토 오탐율 0%, **위험 사례 신속 처리 오분류율 30.61%로 목표 2% 미달**. 단일 영역 위험이 Overall에서 낮아지는 사례를 추가 튜닝하고, 별도 새 평가 seed로 재검증해야 합니다. 현재 결과로 안전한 운영 성능을 주장할 수 없습니다.
+## 바로 열기
 
-실제 LLM A/C 비교와 입력 토큰 절감·설명 수치 정확도·인용률·5회 일관성·블라인드 2인 채점은 미측정입니다. 수치 검증은 명시된 facts와 숫자/날짜를 검사하며 자유 문장의 의미적 정확성을 보증하지 않습니다. A군 수치 자동 채점, 블라인드 점수 수집/집계, 실제 모델로 5회 조사 일관성을 검증하는 작업은 남아 있습니다. 운영 조사와 C 평가 모두 반복 결과 차이를 판단 불가로 처리합니다.
+저장소를 다운로드한 뒤 `index.html` 또는 `InsureLens.html`을 더블클릭하세요. 기본 데모는 Python, Node.js, 패키지 설치 없이 실행됩니다.
 
-브라우저 연결 도구에 사용 가능한 브라우저가 없어 실제 화면 배치 검사는 못 했습니다. DOM 테스트는 별도 통과했습니다. PostgreSQL 실서버·외부 모델·클라우드 배포는 미검증입니다.
+샘플 2,000건으로 시작하며, **분석 개요 → 검토 대상 → 청구 상세·AI 설명 → 분석 보고서** 순서로 사용합니다.
 
-```powershell
+## GitHub Pages 게시
+
+저장소 소유자 또는 Pages 관리 권한이 있는 계정으로 다음 항목을 설정합니다.
+
+1. 저장소 **Settings → Pages**를 엽니다.
+2. **Source**에서 **Deploy from a branch**를 선택합니다.
+3. **Branch**는 `main`, 폴더는 `/(root)`로 선택하고 **Save**를 누릅니다.
+
+게시 완료 후 https://ieunjuee.github.io/p-project/ 로 접속합니다. 이후 `main` 브랜치에 변경 사항을 올리면 갱신됩니다. 루트 `index.html`이 실제 앱인 `dist/index.html`을 엽니다.
+
+## 구현 기능
+
+- UTF-8 CSV 업로드, 필수 열·날짜·금액·중복 검증과 제외 사유 표시
+- 과거 시점 기준 특징 추출, 규칙 분석과 JavaScript Isolation Forest
+- 조정 가능한 탐지 기준·가중치, 변경 전후 결과 비교
+- 청구별 근거, 설명·질문 응답, 담당자 검토 메모
+- 분석 결과 CSV, 인쇄 창을 통한 PDF 저장
+- 과제 요구사항과 구현 기능을 비교하는 ‘과제 적합성’ 화면
+- 금액·검토점수 히스토그램, 도넛(검토 우선순위)·원형(보험 유형) 구성비, 규칙별 탐지 막대, 월별 건수·금액 추이
+- 차트 구간을 눌러 청구 목록 필터링, 선택 조건 해제, 필터 결과 CSV 내보내기
+
+차트의 범례와 조각은 실제 건수·비율을 표시합니다. 금액 히스토그램은 로그 간격 하나로 보여 주며, 큰 금액도 제외하지 않습니다. 기준을 바꾸면 ‘기준을 바꿨습니다’ 카드가 전후 인원과 바뀐 기준을 보여 주고, 닫아도 ‘다시 보기’ 버튼이 남습니다. ‘수치 표로 보기’에서 차트 집계값을 표로 확인할 수 있습니다. 검토 대상 화면에서는 표와 차트가 같은 필터 조건을 사용합니다.
+
+## 설명 모드와 실제 LLM 연결
+
+GitHub Pages와 기본 정적 페이지는 **데모 설명 모드**입니다. 검증된 수치를 정해진 문장으로 설명하며 실제 LLM 출력으로 표시하지 않습니다. GitHub Pages는 이 프로젝트의 Node.js 서버를 실행하지 않습니다.
+
+사람 단위 화면(`person.html`)의 LLM은 **내 컴퓨터에서 실행하는 로컬 모델**을 OpenAI 호환 주소로 호출합니다. 기본값은 Ollama의 Gemma 4 12B입니다(`ollama pull`로 약 8.0GB, GPU 12GB급에서 쓰는 것을 전제로 선택).
+
+```sh
+ollama pull gemma4:12b
+OLLAMA_CONTEXT_LENGTH=8192 ollama serve   # 기본 문맥 길이(4096)는 근거 JSON이 긴 사람에게 모자랄 수 있습니다
+# Windows PowerShell: $env:OLLAMA_CONTEXT_LENGTH=8192; ollama serve (이미 켜진 Ollama는 종료 후 다시 켜야 적용됩니다)
+cp .env.example .env                      # 주소와 모델 이름을 바꿀 때만 수정
+node server.mjs                           # http://localhost:4177/ (검증 홈으로 이동합니다)
+```
+
+| 환경변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `LLM_BASE_URL` | `http://localhost:11434/v1` | LM Studio, vLLM 등 OpenAI 호환 서버면 주소만 바꿉니다 |
+| `LLM_MODEL` | `gemma4:12b` | 다른 오픈소스 모델 비교 시 이름만 바꿉니다 |
+| `LLM_API_KEY` | 비움 | 로컬 모델은 필요 없습니다 |
+| `LLM_TIMEOUT_MS` | `120000` | 모델 첫 로드와 숫자가 틀렸을 때의 재생성(최대 3번) 때문에 길게 둡니다 |
+| `LLM_MODE=demo` | 없음 | LLM을 부르지 않고 데모 설명만 씁니다 |
+| `LLM_EXPLAIN_CAUSES=1` | 없음(꺼짐) | 상세 설명이 원인 후보(causes)까지 쓰게 합니다. 모델 실험에서 시험하지 않은 문구라 처음 보는 사람 데이터로 재시험한 뒤 켜는 것을 권합니다 |
+
+요청은 `temperature 0`, 구조화 JSON 형식, 생각 단계 끄기(`/no_think`와 `reasoning_effort: none`)로 보내고, 응답에 `<think>` 구간이 섞여도 무시합니다. 호출에는 고객 ID와 의료기관 ID를 제외한 분석 JSON만 전달합니다. 연결이 안 되거나 응답이 틀리면 데모 설명으로 바뀌고 분석은 유지됩니다. 기존 청구 단위 화면(`index.html`)의 `/api/explain`만 아직 `OPENAI_API_KEY`를 씁니다.
+
+**검증 상태:** 요청 형식, 응답 처리, 연결 실패 시 데모 전환은 가짜 로컬 서버와 모의 fetch로 확인했습니다. 실제 모델 호출은 소량(상세 설명 5명 등)으로 확인했고, 모델 간 정량 비교(`tools/evaluate-llm.mjs`)의 숫자는 가상 데이터와 코드가 정한 근거 기준입니다. 출력 품질과 원인 후보의 타당성은 담당자가 직접 판단해야 합니다.
+
+## 데이터와 분석 범위
+
+필수 열: `claim_id,customer_id,claim_date,amount,insurance_type,hospital_id,treatment_type`. 날짜는 `YYYY-MM-DD`, 금액은 양수입니다. 업로드 데이터와 검토 메모는 현재 탭의 메모리에 유지되며, 새로고침하면 사라집니다. 분석 기준만 브라우저에 저장합니다.
+
+시간 특징은 청구 날짜 이전의 관측 이력만 사용하고, 같은 날짜의 청구끼리는 서로 참조하지 않습니다. 날짜 기준 최초 약 70%로 모델·결측 대체값·점수 비교 분포를 학습하고 이후 구간에서 가상 패턴을 평가합니다. 학습 구간의 점수는 후향적 점수입니다. 학습 표본이 부족하면 규칙 점수만 사용합니다.
+
+모델은 JavaScript로 구현한 48개 무작위 분할 트리와 최대 128건 부분 표본, 고정 시드를 사용합니다. scikit-learn 구현과 결과가 같다고 주장하지 않습니다. 가상 패턴 레이블은 특징과 모델 입력에서 제외합니다.
+
+**점수는 검토 우선순위이며 사기 확률이나 지급 결정이 아닙니다.** 초기 임계값과 가중치는 실험 설정이고, 가상 패턴 성능을 실제 보험사기 탐지 성능으로 해석할 수 없습니다. 최종 확인은 담당자가 합니다.
+
+## 파일 구조와 테스트
+
+- `dist/`: 브라우저에서 실행되는 HTML·CSS·JavaScript
+- `dist/charts.js`, `dist/charts.css`: 차트 집계·표시·상호작용·반응형 스타일
+- `server.mjs`, `llm.mjs`: 선택적인 LLM 서버 연동
+- `tests/engine.test.cjs`, `tests/charts.test.cjs`, `tests/ui.test.cjs`: 분석, 집계 경계값, 화면 상태 전환 검증
+- `.github/workflows/check.yml`: 커밋·PR 자동 검사
+
+```sh
 npm ci --ignore-scripts
 npm test
-python -m pytest tests/test_aura.py tests/test_aura_api.py -q
 ```
 
-기존 JS 테스트 25개, AURA DOM 2개, Python 13개 통과. FastAPI TestClient의 httpx 사용에 관한 의존성 폐기 예정 경고 1건이 있습니다. 실패 결과를 숨기지 않으며, 단계별 상태는 `IMPLEMENTATION_STATUS.md`에 기록합니다.
-
-## Render 연결 배포 준비
-
-`render.yaml`에 Python API와 PostgreSQL의 무료 데모 구성을 정의했습니다. 관리자 토큰은 Render가 생성하고 GitHub Pages 출처만 API 쓰기 요청에 허용합니다. `AURA_BOOTSTRAP_DEMO=true`는 빈 DB에만 seed 42 데이터와 규칙 기반 조사 결과를 초기화하며 기존 DB를 덮어쓰지 않습니다.
-
-계정 연결 후 Render에 서비스를 실제 생성하고, 배포된 `/api/health`·CORS·관리자 인증을 확인한 다음 `dist/aura-config.js`의 `apiBase`에 검증된 HTTPS 주소를 반영합니다. 이 파일에는 토큰을 넣지 않습니다. 화면 상단의 ‘연결 설정’에서 API 주소와 탭 세션용 관리자 토큰을 변경할 수 있습니다.
-
-Render 계정은 아직 연결되지 않았으며 실제 서버는 생성하지 않았습니다. 무료 서비스에는 휴면/재기동이 있고 무료 PostgreSQL은 30일 뒤 만료됩니다. 유료 플랜으로 자동 전환하지 않습니다. 공식 문서: https://render.com/docs/free
-
-연결 준비 회귀 검증: Python 16개와 JavaScript 28개 통과. PostgreSQL URL 드라이버 선택과 CORS/인증은 검증했으며 PostgreSQL 실서버 접속은 계정 연결 후 확인해야 합니다.
+테스트용 DOM 환경에만 개발 의존성(jsdom)을 사용합니다. 페이지를 열거나 기본 분석·선택적 LLM 서버를 실행할 때에는 패키지 설치가 필요 없습니다. DOM 테스트는 실제 브라우저의 화면 배치 검증을 대신하지 않습니다.
