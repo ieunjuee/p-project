@@ -97,15 +97,15 @@
     if(inner){const c=point(end,inner),d=point(start,inner);return `M${a} A${outer} ${outer} 0 ${large} 1 ${b} L${c} A${inner} ${inner} 0 ${large} 0 ${d} Z`;}
     return `M${center} ${center} L${a} A${outer} ${outer} 0 ${large} 1 ${b} Z`;
   }
-  function pieHTML(series,{mode='donut',filter='priority',label='구성 비율',unit='건',totalLabel='전체 청구'}={}) {
+  function pieHTML(series,{mode='donut',filter='priority',label='구성 비율'}={}) {
     const total=series.reduce((n,item)=>n+item.value,0);if(!total)return empty('표시할 데이터가 없습니다.');
     let angle=-Math.PI/2;
     const slices=series.filter(item=>item.value).map(item=>{
-      const start=angle;angle+=item.value/total*Math.PI*2;const tooltip=`${item.label} · ${number(item.value)}${unit} · ${(item.value/total*100).toFixed(1)}%`;
+      const start=angle;angle+=item.value/total*Math.PI*2;const tooltip=`${item.label} · ${number(item.value)}건 · ${(item.value/total*100).toFixed(1)}%`;
       const geometry=item.value===total?(mode==='donut'?`<circle cx="110" cy="110" r="73" fill="none" stroke="${item.color}" stroke-width="26"/>`:`<circle cx="110" cy="110" r="86" fill="${item.color}"/>`):`<path d="${slicePath(start,angle,mode==='donut'?60:0)}" fill="${item.color}" stroke="#fff" stroke-width="1.5"/>`;
       return `<g ${action(filter,item.label,tooltip)}>${geometry}<title>${esc(tooltip)}</title></g>`;
     }).join('');
-    return `<div class="pie-layout"><div class="pie-visual interactive-chart"><svg viewBox="0 0 220 220" role="group" aria-label="${esc(label)}, 전체 ${number(total)}${unit}">${slices}</svg>${mode==='donut'?`<div class="pie-center"><strong>${number(total)}</strong><span>${esc(totalLabel)}</span></div>`:''}<div class="chart-tooltip" role="tooltip" hidden></div></div><div class="pie-legend">${series.map(item=>`<button class="pie-legend-item" ${item.value?`data-chart-filter="${filter}" data-chart-value="${esc(JSON.stringify(item.label))}"`:'disabled'} aria-label="${esc(item.label)} ${item.value}${unit} 보기"><i style="background:${item.color}"></i><span class="pie-label">${esc(item.label)}</span><span class="pie-value">${number(item.value)}<small>${unit}</small></span><span class="pie-percent">${(item.value/total*100).toFixed(1)}%</span></button>`).join('')}</div></div><div class="plot-help">조각 또는 범례를 눌러 해당 청구를 볼 수 있습니다.</div>`;
+    return `<div class="pie-layout"><div class="pie-visual interactive-chart"><svg viewBox="0 0 220 220" role="group" aria-label="${esc(label)}, 전체 ${number(total)}건">${slices}</svg>${mode==='donut'?`<div class="pie-center"><strong>${number(total)}</strong><span>전체 청구</span></div>`:''}<div class="chart-tooltip" role="tooltip" hidden></div></div><div class="pie-legend">${series.map(item=>`<button class="pie-legend-item" ${item.value?`data-chart-filter="${filter}" data-chart-value="${esc(JSON.stringify(item.label))}"`:'disabled'} aria-label="${esc(item.label)} ${item.value}건 보기"><i style="background:${item.color}"></i><span class="pie-label">${esc(item.label)}</span><span class="pie-value">${number(item.value)}<small>건</small></span><span class="pie-percent">${(item.value/total*100).toFixed(1)}%</span></button>`).join('')}</div></div><div class="plot-help">조각 또는 범례를 눌러 해당 청구를 볼 수 있습니다.</div>`;
   }
   function categoriesHTML(rows,mode='bar') {
     const series=categorySeries(rows);if(mode==='pie')return pieHTML(series,{mode:'pie',filter:'type',label:'보험 유형별 청구 비중'});

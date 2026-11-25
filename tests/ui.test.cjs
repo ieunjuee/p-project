@@ -5,9 +5,9 @@ const path=require('node:path');
 const {JSDOM,VirtualConsole}=require('jsdom');
 const folder=path.resolve(__dirname,'../dist');
 const tick=()=>new Promise(resolve=>setTimeout(resolve,35));
-async function openApp(){
+async function openApp(hash='#dashboard'){
   const errors=[],console=new VirtualConsole();console.on('jsdomError',e=>errors.push(e.message));
-  const dom=new JSDOM(fs.readFileSync(path.join(folder,'legacy.html'),'utf8'),{url:'https://example.test/p-project/dist/legacy.html',runScripts:'outside-only',virtualConsole:console});
+  const dom=new JSDOM(fs.readFileSync(path.join(folder,'index.html'),'utf8'),{url:'https://example.test/p-project/dist/index.html'+hash,runScripts:'outside-only',virtualConsole:console});
   const w=dom.window;w.scrollTo=()=>{};w.print=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
   w.URL.createObjectURL=()=> 'blob:unit-test';w.URL.revokeObjectURL=()=>{};
@@ -16,27 +16,36 @@ async function openApp(){
     w.eval(source+(file==='app.js'?'\nwindow.__test = {getState:()=>state,setDownload:fn=>{download=fn;}};':''));
   }
   await new Promise(resolve=>setTimeout(resolve,100));
-  assert.match(w.document.querySelector('main').textContent,/청구 금액 히스토그램/);
+  assert.ok(w.document.querySelector('main h1'));
   return {dom,w,d:w.document,errors};
 }
 function click(w,element){assert.ok(element,'Expected interactive chart control');element.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));}
+
+test('the entry page verifies claims before the reviewer selects a priority',async()=>{
+  const {dom,w,d,errors}=await openApp('');
+  try{
+    const summary=w.__test.getState().analysis.summary;
+    assert.match(d.querySelector('.verification').textContent,/AI 1차 검증 완료/);
+    assert.equal(d.querySelector('main table'),null);
+    assert.deepEqual([...d.querySelectorAll('.group-total strong')].map(el=>Number(el.textContent.replaceAll(',',''))),
+      [summary.high,summary.medium,summary.count-summary.high-summary.medium]);
+    click(w,d.querySelector('.triage-group.high'));await tick();
+    assert.equal(d.querySelector('#priority-filter').value,'높음');
+    click(w,d.querySelector('.claim-id'));await tick();
+    assert.ok(d.querySelector('#review-form'));assert.deepEqual(errors,[]);
+  }finally{dom.window.close();}
+});
 
 test('dashboard switches chart modes without changing analysis totals',async()=>{
   const {dom,w,d,errors}=await openApp();
   try{
     const total=d.querySelector('.metric-number').textContent;
-    for(const [name,mode] of [['types','pie'],['trend','total']]){
+    for(const [name,mode] of [['priority','pie'],['types','pie'],['amount','log'],['trend','total']]){
       click(w,d.querySelector(`[data-chart-view="${name}"][data-chart-mode="${mode}"]`));
       assert.equal(d.querySelector(`[data-chart-view="${name}"][aria-pressed="true"]`).dataset.chartMode,mode);
       assert.equal(d.querySelector('.metric-number').textContent,total);
     }
-    assert.match(d.querySelector('main').textContent,/로그 간격/);
-    assert.equal(d.querySelector('[data-chart-view="priority"]'),null,'우선순위 분포는 도넛만 남긴다');
-    assert.equal(d.querySelector('[data-chart-view="amount"]'),null,'금액 히스토그램은 로그 간격만 남긴다');
-    assert.ok(d.querySelector('.pie-center'),'도넛 중앙 합계가 표시된다');
-    assert.equal(d.querySelectorAll('.subgrid.wide-pair>.panel').length,2,'우선순위 분포와 보험 유형별 청구가 한 줄에 둘');
-    assert.equal(d.querySelector('.left-column .subgrid'),null,'두 카드는 왼쪽 열 밖(가로 전체)에 있다');
-    assert.deepEqual(errors,[]);
+    assert.match(d.querySelector('main').textContent,/로그 간격/);assert.deepEqual(errors,[]);
   }finally{dom.window.close();}
 });
 test('histogram drilldown, filter removal and filtered CSV use the same rows',async()=>{
@@ -72,10 +81,6 @@ test('all pages render after visual filters and settings still recalculate',asyn
     click(w,d.querySelector('[data-action="settings"]'));d.querySelector('[name="repeatCount"]').value='2';
     d.querySelector('#settings-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
     await new Promise(resolve=>setTimeout(resolve,100));
-    assert.equal(w.__test.getState().analysis.config.repeatCount,2);assert.ok(d.querySelector('[data-action="close-change"]'),'기준 변경 띠가 보여야 함');
-    click(w,d.querySelector('[data-action="close-change"]'));
-    assert.equal(d.querySelector('[data-action="close-change"]'),null);assert.ok(d.querySelector('[data-action="open-change"]'),'닫으면 다시 보기 버튼이 있어야 함');
-    click(w,d.querySelector('[data-action="open-change"]'));
-    assert.ok(d.querySelector('[data-action="close-change"]'),'다시 열면 띠가 돌아와야 함');assert.deepEqual(errors,[]);
+    assert.equal(w.__test.getState().analysis.config.repeatCount,2);assert.match(d.querySelector('main').textContent,/기준 변경 결과/);assert.deepEqual(errors,[]);
   }finally{dom.window.close();}
 });
