@@ -26,7 +26,8 @@ const fake = (...contents) => {
   return { fetch, seen };
 };
 
-test('기본값은 실험에서 시험한 프롬프트와 스키마다(원인 후보 없음)', async () => {
+// [기존 보존] test('기본값은 실험에서 시험한 프롬프트와 스키마다(원인 후보 없음)', async () => {
+test('기본값은 시험한 프롬프트에 교차 판정과 약관 항목을 더한 문구이고, 스키마에는 term_refs가 있다(원인 후보 없음)', async () => {
   const { causes, ...tested } = good();
   const { fetch, seen } = fake(tested);
   const out = await explainPerson(evidence, { fetch });
@@ -34,10 +35,13 @@ test('기본값은 실험에서 시험한 프롬프트와 스키마다(원인 �
   assert.equal(out.attempts, 1);
   assert.equal(out.causes, undefined);
   const schema = seen[0].response_format.json_schema.schema;
-  assert.deepEqual(schema.required, ['summary', 'basis', 'checks']);
+  // [기존 보존] assert.deepEqual(schema.required, ['summary', 'basis', 'checks']);  (약관 RAG 병합 전)
+  assert.deepEqual(schema.required, ['summary', 'basis', 'checks', 'term_refs']);
   assert.ok(!('causes' in schema.properties));
   assert.match(seen[0].messages[0].content, /위험도와 함께 코드가 걸렸다고 판정한 지표의 이름을 모두/);
   assert.match(seen[0].messages[0].content, /나쁜 예: "진료 횟수 11회, 기준값 8회"/);
+  assert.match(seen[0].messages[0].content, /코드가 정한 교차 판정\(중복 확실/); // 요약에 교차 판정도 쓰게 하는 지시
+  assert.match(seen[0].messages[0].content, /관련 약관:/); // 약관 RAG: basis 마지막 줄 지시
   assert.ok(!seen[0].messages[0].content.includes('원인 후보(causes)'));
   assert.match(seen[0].messages[0].content, /no_think/); // 시스템 메시지 끝의 /no_think도 그대로
   assert.equal(seen[0].reasoning_effort, 'none');
@@ -51,7 +55,8 @@ test('LLM_EXPLAIN_CAUSES=1 이면 원인 후보를 요청하고 스키마에서�
     assert.equal(out.provider, 'api');
     assert.deepEqual(out.causes, ['반복 진료가 치료 계획에 따른 것일 수 있습니다.']);
     const schema = seen[0].response_format.json_schema.schema;
-    assert.deepEqual(schema.required, ['summary', 'basis', 'causes', 'checks']);
+    // [기존 보존] assert.deepEqual(schema.required, ['summary', 'basis', 'causes', 'checks']);  (약관 RAG 병합 전)
+    assert.deepEqual(schema.required, ['summary', 'basis', 'causes', 'checks', 'term_refs']);
     assert.match(seen[0].messages[0].content, /원인 후보\(causes\)/);
     assert.match(seen[0].messages[0].content, /위험도와 함께 코드가 걸렸다고 판정한 지표의 이름을 모두/); // 시험한 문구도 함께 들어 있다
   } finally { delete process.env.LLM_EXPLAIN_CAUSES; }
