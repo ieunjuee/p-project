@@ -1,0 +1,8 @@
+.git
+.env
+data
+node_modules
+tmp
+output
+__pycache__
+**/__pycache__

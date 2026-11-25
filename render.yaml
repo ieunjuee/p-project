@@ -1,0 +1,33 @@
+# Demo tier. Free Postgres expires after 30 days; select a paid plan separately
+# only when ongoing hosting has been approved.
+services:
+  - type: web
+    name: insurelens-aura-api
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn backend.api:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: DATABASE_URL
+        fromDatabase:
+          name: insurelens-aura-db
+          property: connectionString
+      - key: AURA_ALLOWED_ORIGINS
+        value: https://ieunjuee.github.io
+      - key: AURA_ADMIN_TOKEN
+        generateValue: true
+      - key: AURA_BOOTSTRAP_DEMO
+        value: "true"
+databases:
+  - name: insurelens-aura-db
+    plan: free
+    region: singapore
+    databaseName: aura
+    user: aura
+    ipAllowList: []
