@@ -55,3 +55,17 @@
   .group-total { margin: 0; }
   .group-total strong { font-size: 18px; }
 }
+
+/* 사람 단위 검증 홈: 카드 4개(높음, 보통, 낮음, 판단 불가)와 설정 창 소제목 */
+.triage-groups.four { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.triage-group.unknown { --dot: #8a979d; }
+.setting-group { margin: 18px 0 8px; font-size: 13px; font-weight: 650; color: #3d6556; }
+.setting-group:first-child { margin-top: 4px; }
+@media (max-width: 600px) { .triage-groups.four { grid-template-columns: 1fr; } }
+
+/* 설정 창 한 줄 설명, 가로 전체를 쓰는 두 카드 */
+.setting-hint { display: block; margin-top: 4px; font-size: 11px; line-height: 1.5; color: #6c7d73; }
+.subgrid.wide-pair { margin-top: 21px; }
+.comparison-strip .button.link { margin-left: 10px; }
+.triage-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.triage-head p { color: #5c6d64; }
