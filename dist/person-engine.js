@@ -317,6 +317,9 @@
     const autoScore = autoHits.length / auto.length * 100;
     const overall = Math.max(medScore, autoScore);
     const bothDomains = medHits.length > 0 && autoHits.length > 0; // 의료·자동차 양쪽에서 동시에 신호
+    // 금액 지표(진료비·수리비)는 상위 5% 기준이라 정상인도 5%는 걸리므로 단독으로는 약한 신호로 봅니다.
+    const weakIds = ['med_cost', 'auto_cost'];
+    const strongHit = [...medHits, ...autoHits].some((s) => !weakIds.includes(s.id)); // 금액 외 지표가 하나라도 걸림
 
     const attention = cross.suspected.length + cross.disclosure.length + cross.prior.length;
     let risk, reason;
@@ -329,13 +332,15 @@
     } else if (overall >= cfg.high) {
       risk = '높음';
       reason = `걸린 지표가 ${Math.max(medHits.length, autoHits.length)}개로 점수 ${overall.toFixed(0)}점입니다.`;
-    } else if (overall >= cfg.medium || attention || bothDomains) {
+    } else if (overall >= cfg.medium || attention || bothDomains || strongHit) {
       risk = '보통';
       reason = overall >= cfg.medium
         ? `걸린 지표가 ${Math.max(medHits.length, autoHits.length)}개로 점수 ${overall.toFixed(0)}점입니다.`
         : attention
           ? '점수는 낮지만 사고와 진료 사이에 확인할 항목이 있습니다.'
-          : '점수는 낮지만 의료와 자동차 양쪽에서 동시에 신호가 있어 확인이 필요합니다.';
+          : bothDomains
+            ? '점수는 낮지만 의료와 자동차 양쪽에서 동시에 신호가 있어 확인이 필요합니다.'
+            : '점수는 낮지만 금액 외 지표(횟수·기간·병원 수 등)가 걸려 확인이 필요합니다.';
     } else {
       risk = '낮음';
       reason = '지표와 교차 확인에서 특별한 위험 신호가 없습니다.';
