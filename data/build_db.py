@@ -17,7 +17,7 @@ ROOT = os.path.dirname(HERE)
 DB_PATH = os.path.join(HERE, "insure.db")
 JSON_PATH = os.path.join(ROOT, "dist", "data", "mock.json")
 SEED = int(os.environ.get("SEED", 20261022))
-VARIANT = os.environ.get("VARIANT") == "1"  # 1이면 변형 시나리오(검증용)
+VARIANT = os.environ.get("VARIANT", "0")  # "1": 검증용 변형, "2": 최종 테스트용 변형
 START = date(2026, 1, 1)
 DAYS = 273  # 2026-01-01 ~ 2026-09-30
 
@@ -230,12 +230,20 @@ class Builder:
         elif scenario == "반복경미사고":
             signals.append("사고 횟수/간격/반복 상대방")
             shop, counter = f"S{self.r.randint(1, 50):03d}", f"C{self.r.randint(1, 300):04d}"
-            base = self.r.randrange(DAYS - 200) if VARIANT else self.r.randrange(DAYS - 110)
-            for k in range(self.r.randint(3, 4)):
-                gap = self.r.randint(35, 60) if VARIANT else self.r.randint(14, 28)
-                accident_id = self.minor_accident(
-                    pid, base + k * gap,
-                    counterparty=counter, shop=shop)
+            if VARIANT == "2":
+                # 최종 테스트용: 사고 3번, 간격 70~110일, 상대방과 정비소가 매번 다름
+                base = self.r.randrange(DAYS - 225)
+                day = base
+                for k in range(3):
+                    accident_id = self.minor_accident(pid, day)
+                    day += self.r.randint(70, 110)
+            else:
+                base = self.r.randrange(DAYS - 200) if VARIANT == "1" else self.r.randrange(DAYS - 110)
+                for k in range(self.r.randint(3, 4)):
+                    gap = self.r.randint(35, 60) if VARIANT == "1" else self.r.randint(14, 28)
+                    accident_id = self.minor_accident(
+                        pid, base + k * gap,
+                        counterparty=counter, shop=shop)
             self.normal_medical(pid, count=self.r.randint(0, 2))
 
         elif scenario == "경미사고과잉진료":
@@ -249,11 +257,18 @@ class Builder:
                           self.r.randint(600000, 1500000),
                           hospital=self.hospital(), receipt=self.nid("RC"),
                           treat=(offset + 1, offset + random.Random(f"{SEED}-{pid}-치료").randint(24, 40)))
-            visits, step = (self.r.randint(6, 8), 4) if VARIANT else (self.r.randint(9, 13), 2)
+            if VARIANT == "2":
+                # 최종 테스트용: 5일 간격 5~7회, 병원 한 곳만 이용
+                visits, step = self.r.randint(5, 7), 5
+                one_hospital = self.hospital()
+            elif VARIANT == "1":
+                visits, step, one_hospital = self.r.randint(6, 8), 4, None
+            else:
+                visits, step, one_hospital = self.r.randint(9, 13), 2, None
             for k in range(visits):
                 self.add_med(pid, offset + 1 + k * step, code,
                              self.r.choices(["물리치료", "외래"], [0.7, 0.3])[0],
-                             self.hospital(),
+                             one_hospital or self.hospital(),
                              self.amount("물리치료", high=self.r.random() < 0.4),
                              receipt=self.nid("RC"), flag="상해")
 
