@@ -449,6 +449,10 @@
 
   /** 담당자 질문에 대한 데모 답변. 근거 JSON의 값만 사용하고 질문 종류를 단어로 구분합니다.
    *  answer는 결론 한두 문장, points는 근거를 한 줄씩 나눈 목록입니다. */
+  /** 이 건의 심사와 관련 없는 질문(뜻 없는 글자, 인사, 잡담)에 쓰는 거절 문장. LLM 모드(person-llm.mjs)도 같은 문장을 씁니다. */
+  const ASK_REFUSAL = "이 건의 심사와 관련된 질문으로 이해하지 못했습니다. 예를 들어 '왜 이 위험도인가요?', '무엇을 확인해야 하나요?'처럼 물어 주세요.";
+  // 아래 단어나 번호가 하나도 없으면 관련 없는 질문으로 봅니다. 앞의 갈래(정상, 확인, 점수)에 걸린 질문은 이 검사 없이 답합니다.
+  const ASK_TOPIC = /위험|왜|이유|지급|보류|정지|권고|판정|판단|지표|청구|사고|영수증|중복|고지|기왕증|약관|근거|결과|수리|진료|병원|횟수|간격|금액|기준|의심|상위|교차|[AM]\d{4,}|(?:AC|RC)\d{4,}/;
   function demoAsk(e, question = '') {
     const q = String(question);
     const hits = hitSignals(e);
@@ -469,9 +473,12 @@
     } else if (/점수|몇\s*점|계산/.test(q)) {
       answer = `종합 점수는 ${e.scores.overall}점입니다. 의료와 자동차 점수 중 큰 값입니다.`;
       points = [`의료 점수 ${e.scores.medical}점`, `자동차 점수 ${e.scores.auto}점`, '중복 확실은 점수와 상관없이 높음입니다.'];
-    } else {
+    } else if (ASK_TOPIC.test(q)) {
       answer = `결과는 ${e.decision}입니다. ${e.risk_reason}`;
       points = base.basis;
+    } else {
+      // [기존 보존] 예전에는 이 자리에 위 사건 요약을 기본 답으로 두어, '바보' 같은 입력에도 지급 정지 설명이 나왔다.
+      return { provider: 'demo', answer: ASK_REFUSAL, points: [], citations: [], on_topic: false };
     }
     return { provider: 'demo', answer, points, citations: citeIds(e).slice(0, 8) };
   }
@@ -701,7 +708,7 @@
     };
   }
 
-  const api = { defaults, analyzePerson, analyzeAll, assemble, summarize, evidence, decision, demoExplain, signalSentence, demoAsk, demoRequest, composeRequest, sanitizeRequest, demoGap, verifyExplanation, evaluate, profile, buildReference, percentile, money, diffDays };
+  const api = { defaults, analyzePerson, analyzeAll, assemble, summarize, evidence, decision, demoExplain, signalSentence, demoAsk, askRefusal: ASK_REFUSAL, demoRequest, composeRequest, sanitizeRequest, demoGap, verifyExplanation, evaluate, profile, buildReference, percentile, money, diffDays };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PersonLens = api;
 })(typeof window !== 'undefined' ? window : globalThis);

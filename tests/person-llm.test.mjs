@@ -77,3 +77,32 @@ test('모델이 붙인 목록 번호와 기호는 지우고, 내부 기준이 �
   assert.ok(!/기준/.test(req.message));
   assert.match(req.message, /진료비 항목과 금액을 확인하기 위해 필요합니다\./);
 });
+
+test('관련 없는 질문은 데모 답변도 사건 요약 대신 거절하고, 관련 있는 질문은 그대로 답한다', async () => {
+  process.env.LLM_MODE = 'demo';
+  try {
+    for (const q of ['바보', 'asdf', '오늘 날씨 어때?', '안녕하세요']) {
+      const a = await assistPerson('ask', evidence, q);
+      assert.equal(a.on_topic, false, q);
+      assert.equal(a.answer, E.askRefusal);
+      assert.deepEqual([a.points, a.citations, a.terms], [[], [], []]);
+    }
+    for (const q of ['왜?', '왜 보류인가요?', '정상일 수 있는 이유는?', '무엇을 확인해야 하나요?', '점수는?', '수리비는 왜 걸렸어?', 'M00006 설명해줘', 'AC00003 뭐야']) {
+      const a = await assistPerson('ask', evidence, q);
+      assert.notEqual(a.on_topic, false, q);
+    }
+  } finally { delete process.env.LLM_MODE; }
+});
+
+test('LLM이 on_topic false로 답하면 모델 문장 대신 고정 거절 문장을 쓰고 약관과 번호를 붙이지 않는다', async () => {
+  const out = await assistPerson('ask', evidence, '바보', { fetch: reply({ on_topic: false, answer: '모델이 쓴 문장', points: ['x'], citations: ['M1'], term_refs: [] }) });
+  assert.equal(out.on_topic, false);
+  assert.equal(out.answer, E.askRefusal);
+  assert.deepEqual([out.points, out.citations, out.terms], [[], [], []]);
+});
+
+test('질문 답변의 조각 번호([2/3])만 지우고 다른 글자(/, +, d, s)는 건드리지 않는다', async () => {
+  const out = await assistPerson('ask', evidence, '확인할 것은?', { fetch: reply({ on_topic: true, answer: '확인하세요.', points: ['원본/지급 내역 + dsd 대조 [2/3]'], citations: [], term_refs: [] }) });
+  assert.equal(out.provider, 'api');
+  assert.deepEqual(out.points, ['원본/지급 내역 + dsd 대조']);
+});

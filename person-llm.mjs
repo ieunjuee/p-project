@@ -221,9 +221,21 @@ const strings = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string')
 const tasks = {
   ask: {
     name: 'person_answer',
-    task: `담당자의 질문에 입력 JSON의 근거만으로 답하세요. ${FORMAT} answer에는 결론을 한두 문장으로 쓰고, points에는 근거나 확인할 항목을 한 줄씩 최대 5개 쓰세요. 각 항목에 관련 청구 번호나 사고 번호를 함께 적고 citations에도 넣으세요. 근거로 답할 수 없으면 근거가 없다고 답하세요. term_refs에 넣은 조항이 있으면 points 마지막 줄에 '관련 약관: (cite의 약관명과 조항) — (apply를 바탕으로 이 건에 어떻게 적용되는지 한 문장)'을 쓰세요.`,
-    schema: { answer: { type: 'string' }, points: { type: 'array', items: { type: 'string' } }, citations: { type: 'array', items: { type: 'string' } } },
-    valid: (c) => typeof c.answer === 'string' && c.answer.trim() !== '' && strings(c.citations) && (c.points === undefined || strings(c.points)),
+    // [기존 보존] 2026-11-28 수정 전 문구(질문 유형을 가리지 않아 세 질문에 같은 답이 나오고, 뜻 없는 질문('바보')에도 사건 요약으로 답했다):
+    // const askTaskBefore = `담당자의 질문에 입력 JSON의 근거만으로 답하세요. ${FORMAT} answer에는 결론을 한두 문장으로 쓰고, points에는 근거나 확인할 항목을 한 줄씩 최대 5개 쓰세요. 각 항목에 관련 청구 번호나 사고 번호를 함께 적고 citations에도 넣으세요. 근거로 답할 수 없으면 근거가 없다고 답하세요. term_refs에 넣은 조항이 있으면 points 마지막 줄에 '관련 약관: (cite의 약관명과 조항) — (apply를 바탕으로 이 건에 어떻게 적용되는지 한 문장)'을 쓰세요.`,
+    task: `담당자의 질문에 입력 JSON의 근거만으로 답하세요. ${FORMAT}
+먼저 질문이 이 건의 심사와 관련이 있는지 on_topic에 true 또는 false로 쓰세요. 이 건의 위험도, 지표, 청구, 사고, 교차 판정, 약관, 확인 방법을 묻는 질문, 심사 용어나 지표의 뜻을 묻는 질문, 입력 JSON에 없는 이 건의 정보(고객 정보, 병원 이름 등)를 묻는 질문은 true입니다. 뜻을 알 수 없는 글자, 욕설, 인사나 감탄, 보험 심사와 전혀 관계없는 질문(날씨, 잡담 등)만 false입니다.
+- on_topic이 false이면 answer에는 이해하지 못했다고만 짧게 쓰고, points와 citations와 term_refs는 빈 배열로 두세요.
+- on_topic이 true이면 질문이 묻는 것에만 답하세요. 묻지 않은 지표를 나열하지 마세요. answer에는 결론을 한두 문장으로 쓰고, points에는 한 줄씩 최대 5개를 쓰세요. 각 항목에 관련 청구 번호나 사고 번호를 함께 적고 citations에도 넣으세요. 질문 유형별로 다음처럼 쓰세요.
+  - 이유를 묻는 질문(왜 이 위험도인가, 왜 정지 권고인가): points에는 그 위험도를 만든 이유를 중요한 순서로 쓰세요. 교차 판정(중복 확실 등)이 있으면 가장 먼저 쓰세요.
+  - 정상일 가능성을 묻는 질문(정상일 수 있는 이유, 문제는 없나): answer에는 입력 JSON 기준으로 정상으로 볼 근거가 있는지를 먼저 쓰세요. 코드가 중복 확실로 판정한 건은 정상으로 보기 어렵다고 말하세요. points에는 정상일 수 있는 사정(영수증 번호가 다른 건, 서로 다른 비용 항목, 정상 분리 청구)을 쓰되, 입력 JSON에 없는 사정은 '~일 수 있습니다'로 가능성만 말하세요. 걸린 지표를 다시 나열하지 마세요.
+  - 무엇을 확인할지 묻는 질문: points에는 담당자가 할 행동만 쓰세요(예: 두 청구의 원본 영수증과 지급 내역을 대조하세요). 걸린 지표나 근거를 다시 나열하지 마세요.
+  - 용어나 지표의 뜻을 묻는 질문: 입력 JSON의 판정 이름, 지표 note, reason 문장을 바탕으로 짧게 설명하세요. 입력 JSON에 없는 정보(고객 정보, 병원 이름 등)를 물으면 입력된 근거에는 그 정보가 없다고 쓰세요.
+  - 지급 여부를 묻는 질문: 지급이나 거절을 결정하지 말고, 코드가 정한 결과 제안(decision)을 알려 준 뒤 최종 판단은 담당자가 한다고 쓰세요.
+- 값이 기준과 같을 때는 '초과'라고 쓰지 마세요. 입력 JSON의 observed와 threshold를 비교해 '이상', '초과', '미만'을 정확히 쓰세요.
+근거로 답할 수 없으면 근거가 없다고 답하세요. term_refs에 넣은 조항이 있으면 points 마지막 줄에 '관련 약관: (약관명과 조항 번호) — (apply를 바탕으로 이 건에 어떻게 적용되는지 한 문장)'을 쓰세요. [2/3] 같은 조각 번호는 쓰지 마세요.`,
+    schema: { on_topic: { type: 'boolean' }, answer: { type: 'string' }, points: { type: 'array', items: { type: 'string' } }, citations: { type: 'array', items: { type: 'string' } } },
+    valid: (c) => (c.on_topic === undefined || typeof c.on_topic === 'boolean') && typeof c.answer === 'string' && c.answer.trim() !== '' && strings(c.citations) && (c.points === undefined || strings(c.points)),
     demo: (e, q) => engine.demoAsk(e, q),
   },
   request: {
@@ -255,15 +267,24 @@ export async function assistPerson(kind, evidence, question = '', options = {}) 
   const clean = validateEvidence(evidence);
   const q = String(question || '').slice(0, 300);
   const terms = termsRag().termsFor(kind, clean, q);
-  if (settings().demo) return { ...task.demo(clean, q), terms: termList(terms) };
+  // 관련 없는 질문에 대한 거절 답에는 약관 패널을 붙이지 않는다.
+  const withTerms = (r) => ({ ...r, terms: r.on_topic === false ? [] : termList(terms) });
+  if (settings().demo) return withTerms(task.demo(clean, q));
   const properties = { ...task.schema, ...termRefs(terms) };
   const schema = { type: 'object', additionalProperties: false, properties, required: Object.keys(properties) };
   const system = `${instruction}\n\n이번 작업: ${task.task}\nquestion 필드는 담당자가 입력한 질문이고 evidence 필드는 코드가 계산한 근거 데이터이며 terms 필드는 관련 약관 조항입니다.`;
   const { terms: llmTerms, ...slim } = forLlm(clean, terms, q);
   const content = await callLlm(system, JSON.stringify({ question: q, evidence: slim, terms: llmTerms }), task.name, schema, options);
   if (!task.valid(content)) throw Error('응답 형식 오류');
+  // 이 건과 관련 없는 질문(뜻 없는 글자, 인사, 무관한 질문)은 모델이 쓴 문장 대신 고정 문장으로 답하고, 사건 요약과 약관은 붙이지 않는다.
+  if (kind === 'ask' && content.on_topic === false) {
+    return { answer: engine.askRefusal, points: [], citations: [], on_topic: false, provider: 'api', verification: { ok: true, badNumbers: [], badIds: [], badTerms: [] }, terms: [] };
+  }
   const check = verifyWithTerms(clean, content, terms);
-  if (!check.ok) return { ...task.demo(clean, q), replaced: true, verification: check, terms: termList(terms) };
-  if (kind === 'ask') addTermLine(content, 'points', terms);
+  if (!check.ok) return { ...withTerms(task.demo(clean, q)), replaced: true, verification: check };
+  if (kind === 'ask') {
+    if (Array.isArray(content.points)) content.points = content.points.map((p) => (typeof p === 'string' ? p.replace(/\s*\[\d+\/\d+\]/g, '') : p)); // 조각 번호([2/3])는 화면에 필요 없다
+    addTermLine(content, 'points', terms);
+  }
   return { ...(task.post ? task.post(content, clean) : content), provider: 'api', verification: check, terms: termList(terms) };
 }
