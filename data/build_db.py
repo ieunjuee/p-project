@@ -43,8 +43,19 @@ KCD = [
 INJURY = [k for k in KCD if k[3] == 1]
 DISEASE = [k for k in KCD if k[3] == 0]
 
-# 시나리오와 인원 비율 (합계 100%)
+# 시나리오와 인원 비율 (합계 100%). 화면용 DB와 기본 평가는 이 목록을 씁니다.
 SCENARIOS = [
+    ("일반정상", 0.60, 0),
+    ("정상분리청구", 0.08, 0),
+    ("잦은정상진료", 0.07, 0),
+    ("중복보상", 0.06, 1),
+    ("고지누락", 0.05, 1),
+    ("반복경미사고", 0.05, 1),
+    ("경미사고과잉진료", 0.05, 1),
+    ("복합", 0.04, 1),
+]
+# 경계 시험(--stress): 기준 바로 아래 정상과 현재 기준 밖 위험 유형을 더한 목록 (일반정상 60% → 45%)
+STRESS_SCENARIOS = [
     ("일반정상", 0.45, 0),
     ("정상분리청구", 0.08, 0),
     ("잦은정상진료", 0.07, 0),
@@ -58,9 +69,9 @@ SCENARIOS = [
     ("경미사고과잉진료", 0.05, 1),
     ("복합", 0.04, 1),
     ("기왕증", 0.03, 1),
-    ("중복금액차이", 0.02, 1),  # 어려운 사례: 현재 규칙(금액 차 5% 이내)으로는 못 잡음
+    ("중복금액차이", 0.02, 1),  # 기준 밖 설계: 현재 규칙(금액 차 5% 이내)으로는 못 잡음
     ("중복의심", 0.02, 1),
-    ("영수증분할중복", 0.02, 1),  # 어려운 사례: 한 번의 치료비를 실손에 두 건으로 나눠 청구
+    ("영수증분할중복", 0.02, 1),  # 기준 밖 설계: 한 번의 치료비를 실손에 두 건으로 나눠 청구
 ]
 TOTAL_PEOPLE = 500
 AGE = ["20대", "30대", "40대", "50대", "60대"]
@@ -400,11 +411,11 @@ def inject_missing_receipt(builder, count=8):
     return affected
 
 
-def scenario_plan(people, fraud_rate=None):
+def scenario_plan(people, fraud_rate=None, scenarios=SCENARIOS):
     """시나리오별 인원. fraud_rate를 주면 위험 시나리오 합계가 그 비율이 되도록 비례 조정합니다."""
-    risky = sum(r for _, r, s in SCENARIOS if s)
+    risky = sum(r for _, r, s in scenarios if s)
     plan = []
-    for name, ratio, suspicious in SCENARIOS:
+    for name, ratio, suspicious in scenarios:
         if fraud_rate is not None:
             ratio = ratio / risky * fraud_rate if suspicious else ratio / (1 - risky) * (1 - fraud_rate)
         plan += [(name, suspicious)] * round(people * ratio)
@@ -421,7 +432,10 @@ def main():
     ap.add_argument("--people", type=int, default=TOTAL_PEOPLE)
     ap.add_argument("--fraud-rate", type=float, default=None, help="위험 시나리오 비율 (예: 0.05)")
     ap.add_argument("--out", default=None, help="검증용 데이터 폴더. 주면 화면용 파일은 만들지 않음")
+    ap.add_argument("--stress", action="store_true", help="함정 정상·기준 밖 위험 유형을 더한 경계 시험 데이터")
     args = ap.parse_args()
+    if args.stress and not args.out:
+        ap.error("--stress 는 --out 과 함께 쓰세요 (화면용 DB는 기본 시나리오 유지)")
     if args.fraud_rate is not None and not 0 < args.fraud_rate < 1:
         ap.error("--fraud-rate 는 0과 1 사이")
     SEED = args.seed  # 시나리오 안의 보조 난수도 같은 seed를 따르게 함
@@ -430,7 +444,7 @@ def main():
     json_path = os.path.join(out_dir, "mock.json") if out_dir else JSON_PATH
 
     builder = Builder(SEED)
-    plan = scenario_plan(args.people, args.fraud_rate)
+    plan = scenario_plan(args.people, args.fraud_rate, STRESS_SCENARIOS if args.stress else SCENARIOS)
     builder.r.shuffle(plan)
 
     for index, (scenario, suspicious) in enumerate(plan, start=1):

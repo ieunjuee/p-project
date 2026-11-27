@@ -59,11 +59,14 @@ test('잘못된 위험 비율은 거부한다', { skip: !PYTHON && 'Python 없�
   }
 });
 
-test('함정 정상 시나리오는 정상으로 표시되고 위험 비율을 낮춰도 남는다', { skip: !PYTHON && 'Python 없음' }, () => {
-  const { labels } = buildTo(['--seed', '15', '--people', '1000', '--fraud-rate', '0.05']);
+test('--stress 는 함정 정상을 정상으로 더하고, 기본 데이터에는 넣지 않는다', { skip: !PYTHON && 'Python 없음' }, () => {
+  const { labels } = buildTo(['--seed', '15', '--people', '1000', '--fraud-rate', '0.05', '--stress']);
+  const plain = buildTo(['--seed', '15', '--people', '1000', '--fraud-rate', '0.05']).labels;
   for (const name of ['정상고액입원', '정상다병원이용', '경계정상']) {
     const rows = Object.values(labels).filter((r) => r.scenario === name);
     assert.ok(rows.length > 0, `${name} 없음`);
     assert.ok(rows.every((r) => r.is_suspicious === 0), `${name}에 위험 표시`);
+    assert.ok(!Object.values(plain).some((r) => r.scenario === name), `기본 데이터에 ${name}`);
   }
+  assert.notEqual(build(['--stress']).status, 0, '--out 없는 --stress 는 거부');
 });
