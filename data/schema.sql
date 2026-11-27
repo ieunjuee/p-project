@@ -61,7 +61,9 @@ CREATE TABLE scenario_label (
     person_id        TEXT PRIMARY KEY REFERENCES person(person_id),
     scenario         TEXT NOT NULL CHECK (scenario IN (
                         '일반정상','정상분리청구','잦은정상진료',
-                        '중복보상','고지누락','반복경미사고','경미사고과잉진료','복합')),
+                        '중복보상','고지누락','반복경미사고','경미사고과잉진료','복합',
+                        '기왕증','중복금액차이','중복의심','영수증분할중복',
+                        '정상고액입원','정상다병원이용','경계정상')),
     is_suspicious    INTEGER NOT NULL CHECK (is_suspicious IN (0,1)),
     injected_signals TEXT
 );

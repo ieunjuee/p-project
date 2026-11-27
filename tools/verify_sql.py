@@ -86,7 +86,7 @@ def main():
     if not os.path.exists(DB):
         sys.exit("data/insure.db가 없습니다. python3 data/build_db.py 를 먼저 실행하세요.")
     engine = json.loads(subprocess.run(
-        ["node", "-e", DUMP], cwd=ROOT, capture_output=True, text=True, check=True).stdout)
+        ["node", "-e", DUMP], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True).stdout)
 
     con = sqlite3.connect(DB)
     med_count = dict(con.execute(SQL_MED_COUNT).fetchall())

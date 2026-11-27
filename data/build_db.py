@@ -3,8 +3,14 @@
 실행: python3 data/build_db.py
 결과: data/insure.db (SQLite 6개 테이블), dist/data/mock.json (화면용 동일 데이터), dist/data/insure.db (화면용 DB, 정답표 제외)
 
+검증용 데이터 (기준값을 정한 데이터와 분리해서 성능 측정):
+  python3 data/build_db.py --seed 20261120 --people 2000 --fraud-rate 0.05 --out data/test
+  node tools/evaluate.mjs data/test
+  --out 을 주면 그 폴더에 insure.db(정답표 포함), mock.json, labels.json만 만들고 화면용 파일은 건드리지 않습니다.
+
 시나리오 비율과 지표 기준값은 초안이며, 팀 합의 후 조정해야 합니다.
 """
+import argparse
 import json
 import os
 import random
@@ -38,14 +44,22 @@ DISEASE = [k for k in KCD if k[3] == 0]
 
 # 시나리오와 인원 비율 (합계 100%)
 SCENARIOS = [
-    ("일반정상", 0.60, 0),
+    ("일반정상", 0.45, 0),
     ("정상분리청구", 0.08, 0),
     ("잦은정상진료", 0.07, 0),
+    # 함정 정상: 의심처럼 보이지만 기준에는 못 미치는 정상
+    ("정상고액입원", 0.02, 0),
+    ("정상다병원이용", 0.02, 0),
+    ("경계정상", 0.02, 0),
     ("중복보상", 0.06, 1),
     ("고지누락", 0.05, 1),
     ("반복경미사고", 0.05, 1),
     ("경미사고과잉진료", 0.05, 1),
     ("복합", 0.04, 1),
+    ("기왕증", 0.03, 1),
+    ("중복금액차이", 0.02, 1),  # 어려운 사례: 현재 규칙(금액 차 5% 이내)으로는 못 잡음
+    ("중복의심", 0.02, 1),
+    ("영수증분할중복", 0.02, 1),  # 어려운 사례: 한 번의 치료비를 실손에 두 건으로 나눠 청구
 ]
 TOTAL_PEOPLE = 500
 AGE = ["20대", "30대", "40대", "50대", "60대"]
@@ -254,6 +268,93 @@ class Builder:
                              self.amount("물리치료", high=self.r.random() < 0.4),
                              receipt=self.nid("RC"), flag="상해")
 
+        elif scenario == "기왕증":
+            # 사고 30~80일 전에 같은 부위 진료가 있고, 사고 후 같은 부위 손상 진료를 청구
+            signals.append("기왕증 (사고 전 같은 부위 진료)")
+            offset = self.r.randrange(90, DAYS - 40)
+            code, prior_code = self.r.choice([("S33", "M54"), ("S80", "M25")])
+            hospital = self.hospital()
+            for k in range(self.r.randint(1, 3)):
+                self.add_med(pid, offset - self.r.randint(30, 80), prior_code, "물리치료",
+                             self.hospital(), self.amount("물리치료"), receipt=self.nid("RC"))
+            accident_id = self.add_accident(pid, offset, self.r.choice(["추돌", "접촉"]))
+            self.add_auto(pid, accident_id, "대물수리비", offset + 3,
+                          self.r.randint(500000, 2000000))
+            for k in range(self.r.randint(1, 3)):
+                self.add_med(pid, offset + 2 + k * 7, code, "외래", hospital,
+                             self.amount("외래"), receipt=self.nid("RC"), flag="상해")
+
+        elif scenario == "중복금액차이":
+            # 같은 병원·같은 치료 기간에 양쪽 청구, 영수증은 다르고 금액 차이 8~15%
+            signals.append("중복 (금액 차이 5% 초과, 규칙 경계 밖)")
+            offset = self.r.randrange(DAYS - 60)
+            code = self.r.choice(INJURY)[0]
+            hospital = self.hospital()
+            amount = self.amount("외래")
+            accident_id = self.add_accident(pid, offset, self.r.choice(["추돌", "접촉"]))
+            self.add_auto(pid, accident_id, "대물수리비", offset + 3,
+                          self.r.randint(500000, 2000000))
+            self.add_auto(pid, accident_id, "대인치료비", offset + 5, amount,
+                          hospital=hospital, receipt=self.nid("RC"),
+                          treat=(offset + 1, offset + self.r.randint(10, 16)))
+            self.add_med(pid, offset + 2, code, "외래", hospital,
+                         round(amount * (1 + self.r.choice([-1, 1]) * self.r.uniform(0.08, 0.15)), -3),
+                         receipt=self.nid("RC"), flag="상해")
+
+        elif scenario == "정상고액입원":
+            # 질병으로 한 번 길게 입원해 금액은 크지만 횟수·간격·병원 수는 평범함
+            code = self.r.choice(DISEASE)[0]
+            self.add_med(pid, self.r.randrange(DAYS), code, "입원", self.hospital(),
+                         self.amount("입원", high=True), receipt=self.nid("RC"))
+            self.normal_medical(pid, count=self.r.randint(0, 2))
+
+        elif scenario == "정상다병원이용":
+            # 한 달 안에 서로 다른 질병으로 여러 병원 이용. 같은 병명은 2곳까지(기준 3곳 미만)
+            start = self.r.randrange(DAYS - 35)
+            for code, _, _, _ in self.r.sample(DISEASE, 3):
+                for k in range(2):
+                    self.add_med(pid, start + self.r.randint(0, 30), code, "외래",
+                                 self.hospital(), self.amount("외래"), receipt=self.nid("RC"))
+
+        elif scenario == "경계정상":
+            # 기준 바로 아래: 같은 병명 30일에 7회(기준 8회), 4일 간격(기준 3일 미만),
+            # 사고 2건을 40~80일 간격(기준 90일 3건, 30일 미만)
+            code = self.r.choice(DISEASE)[0]
+            hospital = self.hospital()
+            start = self.r.randrange(DAYS - 30)
+            for k in range(7):
+                treatment = self.r.choice(["외래", "물리치료"])
+                self.add_med(pid, start + k * 4, code, treatment,
+                             hospital, self.amount(treatment), receipt=self.nid("RC"))
+            # 상대방·정비소가 우연히 겹치면 반복 청구(2건)에 걸리므로 두 사고를 서로 다르게 고정 (일반 번호 범위 밖)
+            first = self.r.randrange(DAYS - 90)
+            self.minor_accident(pid, first, counterparty="C9001", shop="S901")
+            self.minor_accident(pid, first + self.r.randint(40, 80), counterparty="C9002", shop="S902")
+
+        elif scenario in ("중복의심", "영수증분할중복"):
+            # 같은 병원·같은 치료 기간에 양쪽 청구, 영수증 번호는 서로 다름
+            offset = self.r.randrange(DAYS - 60)
+            code = self.r.choice(INJURY)[0]
+            hospital = self.hospital()
+            amount = self.amount("외래")
+            accident_id = self.add_accident(pid, offset, self.r.choice(["추돌", "접촉"]))
+            self.add_auto(pid, accident_id, "대물수리비", offset + 3,
+                          self.r.randint(500000, 2000000))
+            self.add_auto(pid, accident_id, "대인치료비", offset + 5, amount,
+                          hospital=hospital, receipt=self.nid("RC"),
+                          treat=(offset + 1, offset + self.r.randint(10, 16)))
+            if scenario == "중복의심":
+                signals.append("중복 의심 (같은 병원·기간, 금액 차 5% 이내)")
+                self.add_med(pid, offset + 2, code, "외래", hospital,
+                             round(amount * (1 + self.r.uniform(-0.03, 0.03)), -3),
+                             receipt=self.nid("RC"), flag="상해")
+            else:
+                signals.append("중복 (실손에 두 건으로 나눠 청구, 규칙 경계 밖)")
+                half = round(amount / 2, -3)
+                for k in range(2):
+                    self.add_med(pid, offset + 2 + k * 3, code, "외래", hospital,
+                                 half, receipt=self.nid("RC"), flag="상해")
+
         return signals
 
 
@@ -263,6 +364,7 @@ def inject_missing_receipt(builder, count=8):
     for row in builder.label:
         if row["scenario"] == "중복보상":
             targets.append(row["person_id"])
+    count = round(len(targets) * count / 30)  # 기본 데이터(중복보상 30명) 기준 8명 비율 유지
     for pid in targets[:count]:
         touched = False
         for claim in builder.med:
@@ -280,14 +382,37 @@ def inject_missing_receipt(builder, count=8):
     return affected
 
 
-def main():
-    builder = Builder()
+def scenario_plan(people, fraud_rate=None):
+    """시나리오별 인원. fraud_rate를 주면 위험 시나리오 합계가 그 비율이 되도록 비례 조정합니다."""
+    risky = sum(r for _, r, s in SCENARIOS if s)
     plan = []
     for name, ratio, suspicious in SCENARIOS:
-        plan += [(name, suspicious)] * round(TOTAL_PEOPLE * ratio)
-    plan = plan[:TOTAL_PEOPLE]
-    while len(plan) < TOTAL_PEOPLE:
+        if fraud_rate is not None:
+            ratio = ratio / risky * fraud_rate if suspicious else ratio / (1 - risky) * (1 - fraud_rate)
+        plan += [(name, suspicious)] * round(people * ratio)
+    plan = plan[:people]
+    while len(plan) < people:
         plan.append(("일반정상", 0))
+    return plan
+
+
+def main():
+    global SEED
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument("--people", type=int, default=TOTAL_PEOPLE)
+    ap.add_argument("--fraud-rate", type=float, default=None, help="위험 시나리오 비율 (예: 0.05)")
+    ap.add_argument("--out", default=None, help="검증용 데이터 폴더. 주면 화면용 파일은 만들지 않음")
+    args = ap.parse_args()
+    if args.fraud_rate is not None and not 0 < args.fraud_rate < 1:
+        ap.error("--fraud-rate 는 0과 1 사이")
+    SEED = args.seed  # 시나리오 안의 보조 난수도 같은 seed를 따르게 함
+    out_dir = os.path.abspath(args.out) if args.out else None
+    db_path = os.path.join(out_dir, "insure.db") if out_dir else DB_PATH
+    json_path = os.path.join(out_dir, "mock.json") if out_dir else JSON_PATH
+
+    builder = Builder(SEED)
+    plan = scenario_plan(args.people, args.fraud_rate)
     builder.r.shuffle(plan)
 
     for index, (scenario, suspicious) in enumerate(plan, start=1):
@@ -302,9 +427,10 @@ def main():
     missing = inject_missing_receipt(builder)
 
     # --- SQLite 저장 ---
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-    con = sqlite3.connect(DB_PATH)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    if os.path.exists(db_path):
+        os.remove(db_path)
+    con = sqlite3.connect(db_path)
     con.executescript(open(os.path.join(HERE, "schema.sql"), encoding="utf-8").read())
     con.executemany("INSERT INTO person VALUES (:person_id,:age_group,:gender)", builder.person)
     con.executemany("INSERT INTO kcd_master VALUES (?,?,?,?)", KCD)
@@ -336,25 +462,27 @@ def main():
         "auto_accident": builder.acc,
         "auto_claim": builder.auto,
     }
-    os.makedirs(os.path.dirname(JSON_PATH), exist_ok=True)
-    with open(JSON_PATH, "w", encoding="utf-8") as fp:
+    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+    with open(json_path, "w", encoding="utf-8") as fp:
         json.dump(payload, fp, ensure_ascii=False, separators=(",", ":"))
 
     # 정답표는 별도 파일로 둡니다. 화면의 "검증 결과" 탭에서만 읽고,
     # 위험도 계산에는 절대 넣지 않습니다.
-    labels_path = os.path.join(os.path.dirname(JSON_PATH), "labels.json")
+    labels_path = os.path.join(os.path.dirname(json_path), "labels.json")
     with open(labels_path, "w", encoding="utf-8") as fp:
         json.dump({row["person_id"]: row for row in builder.label}, fp,
                   ensure_ascii=False, separators=(",", ":"))
 
-    # 화면(브라우저의 SQLite)용 DB는 정답표 테이블을 뺀 복사본입니다.
-    web_db = os.path.join(os.path.dirname(JSON_PATH), "insure.db")
-    shutil.copyfile(DB_PATH, web_db)
-    con = sqlite3.connect(web_db)
-    con.execute("DROP TABLE scenario_label")
-    con.commit()
-    con.execute("VACUUM")
-    con.close()
+    # 화면(브라우저의 SQLite)용 DB는 정답표 테이블을 뺀 복사본입니다. 검증용(--out)은 만들지 않습니다.
+    web_db = None
+    if not out_dir:
+        web_db = os.path.join(os.path.dirname(JSON_PATH), "insure.db")
+        shutil.copyfile(DB_PATH, web_db)
+        con = sqlite3.connect(web_db)
+        con.execute("DROP TABLE scenario_label")
+        con.commit()
+        con.execute("VACUUM")
+        con.close()
 
     counts = {}
     for row in builder.label:
@@ -363,9 +491,11 @@ def main():
           f"auto_accident {len(builder.acc)}, auto_claim {len(builder.auto)}")
     print("시나리오:", counts)
     print("영수증 결측 주입:", len(missing), "명")
-    print("DB:", DB_PATH)
-    print("화면용 DB:", web_db, f"{os.path.getsize(web_db)/1024:.0f}KB")
-    print("JSON:", JSON_PATH, f"{os.path.getsize(JSON_PATH)/1024:.0f}KB")
+    print("seed:", SEED, "/ 위험 비율:", f"{sum(r['is_suspicious'] for r in builder.label) / len(builder.label):.1%}")
+    print("DB:", db_path)
+    if web_db:
+        print("화면용 DB:", web_db, f"{os.path.getsize(web_db)/1024:.0f}KB")
+    print("JSON:", json_path, f"{os.path.getsize(json_path)/1024:.0f}KB")
 
 
 if __name__ == "__main__":

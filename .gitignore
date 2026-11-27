@@ -229,3 +229,7 @@ tmp/
 data/*.sqlite3*
 data/*.db*
 output/
+
+# 검증용 가상 데이터 (python data/build_db.py --out ..., python tools/eval_seeds.py 로 다시 만듦)
+data/test/
+data/test_seeds/
