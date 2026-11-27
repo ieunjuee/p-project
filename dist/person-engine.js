@@ -14,13 +14,16 @@
     medHospitalCount: 3,    // 같은 병명으로 이용한 병원 수 기준
     autoWindowDays: 90,     // 사고 횟수를 보는 기간
     autoAccidentCount: 3,   // 사고 횟수 기준
+    autoLongWindowDays: 365, // 긴 창: 1년 (SDB2에서 1년 3건 이상 2.6%)
+    autoLongCount: 3,       // 1년 안 사고 횟수 기준
     autoGapDays: 30,        // 연속 사고 간격 기준 (미만이면 걸림)
     repeatCount: 2,         // 반복 청구 기준 건수
     costPercentile: 0.95,   // 금액 상위 기준 (상위 5%)
     costHitCount: 2,        // 상위 금액 청구가 몇 건 이상이어야 걸리는지
     minPeers: 15,           // 금액 비교에 필요한 최소 표본
     crossWindowDays: 30,    // 사고 후 진료를 연결하는 기간
-    priorDays: 90,          // 기왕증을 확인하는 사고 이전 기간
+    priorDays: 90,
+    treatDays: 28,          // 경상환자 진단서 기준(4주). 이보다 길면 걸림          // 기왕증을 확인하는 사고 이전 기간
     amountTolerance: 0.05,  // 중복 의심의 금액 차이 허용 범위
     high: 60,               // 높음 기준 점수
     medium: 30,             // 보통 기준 점수
@@ -170,9 +173,11 @@
     const dates = rec.accidents.map((a) => a.accident_date);
 
     const count = windowMax(dates, cfg.autoWindowDays);
-    out.push(signal('auto_count', '사고 횟수', count >= cfg.autoAccidentCount, count, cfg.autoAccidentCount,
-      count >= cfg.autoAccidentCount ? rec.accidents.map((a) => a.accident_id) : [],
-      `${cfg.autoWindowDays}일 안의 최대 사고 수`));
+    const longCount = windowMax(dates, cfg.autoLongWindowDays);
+    const countHit = count >= cfg.autoAccidentCount || longCount >= cfg.autoLongCount;
+    out.push(signal('auto_count', '사고 횟수', countHit, count, cfg.autoAccidentCount,
+      countHit ? rec.accidents.map((a) => a.accident_id) : [],
+      `${cfg.autoWindowDays}일 최대 ${count}건, ${cfg.autoLongWindowDays}일 최대 ${longCount}건`));
 
     let minGap = null;
     for (let i = 1; i < dates.length; i++) {
@@ -185,8 +190,8 @@
 
     const longTreat = rec.autoClaims.filter((c) => c.claim_type === '대인치료비' && c.treat_start && c.treat_end
       && ref.accidentType.get(c.accident_id) === '접촉'
-      && ref.treat.threshold !== null
-      && diffDays(c.treat_end, c.treat_start) + 1 > ref.treat.threshold); // 일수는 같은 값이 많아 경계값 초과만 봅니다
+      && (diffDays(c.treat_end, c.treat_start) + 1 > cfg.treatDays
+        || (ref.treat.threshold !== null && diffDays(c.treat_end, c.treat_start) + 1 > ref.treat.threshold))); // 일수는 같은 값이 많아 경계값 초과만 봅니다
     out.push(signal('auto_treat', '치료 기간', longTreat.length > 0, longTreat.length, 1,
       longTreat.map((c) => c.auto_claim_id),
       `접촉 사고(경미 사고 대신) 대인 치료 기간이 상위 ${Math.round((1 - cfg.costPercentile) * 100)}% 경계 초과`));
@@ -311,6 +316,10 @@
     const medScore = medHits.length / med.length * 100;
     const autoScore = autoHits.length / auto.length * 100;
     const overall = Math.max(medScore, autoScore);
+    const bothDomains = medHits.length > 0 && autoHits.length > 0; // 의료·자동차 양쪽에서 동시에 신호
+    // 금액 지표(진료비·수리비)는 상위 5% 기준이라 정상인도 5%는 걸리므로 단독으로는 약한 신호로 봅니다.
+    const weakIds = ['med_cost', 'auto_cost'];
+    const strongHit = [...medHits, ...autoHits].some((s) => !weakIds.includes(s.id)); // 금액 외 지표가 하나라도 걸림
 
     const attention = cross.suspected.length + cross.disclosure.length + cross.prior.length;
     let risk, reason;
@@ -323,11 +332,15 @@
     } else if (overall >= cfg.high) {
       risk = '높음';
       reason = `걸린 지표가 ${Math.max(medHits.length, autoHits.length)}개로 점수 ${overall.toFixed(0)}점입니다.`;
-    } else if (overall >= cfg.medium || attention) {
+    } else if (overall >= cfg.medium || attention || bothDomains || strongHit) {
       risk = '보통';
       reason = overall >= cfg.medium
         ? `걸린 지표가 ${Math.max(medHits.length, autoHits.length)}개로 점수 ${overall.toFixed(0)}점입니다.`
-        : '점수는 낮지만 사고와 진료 사이에 확인할 항목이 있습니다.';
+        : attention
+          ? '점수는 낮지만 사고와 진료 사이에 확인할 항목이 있습니다.'
+          : bothDomains
+            ? '점수는 낮지만 의료와 자동차 양쪽에서 동시에 신호가 있어 확인이 필요합니다.'
+            : '점수는 낮지만 금액 외 지표(횟수·기간·병원 수 등)가 걸려 확인이 필요합니다.';
     } else {
       risk = '낮음';
       reason = '지표와 교차 확인에서 특별한 위험 신호가 없습니다.';
@@ -589,9 +602,9 @@
       med_cost: `같은 병명, 같은 치료 종류 중 금액이 상위 ${top}%에 드는 청구가 ${o}건입니다. ${t}건 이상이면 의심 신호로 봅니다.`,
       med_repeat: `같은 영수증, 또는 같은 날 같은 병원 같은 금액으로 ${t}번 이상 청구한 기록이 있으면 의심 신호로 봅니다. 해당하는 청구는 ${o}건입니다.`,
       med_hospital: `같은 병명으로 ${cfg.medWindowDays}일 안에 ${o}곳의 병원을 이용했습니다. ${t}곳 이상이면 의심 신호로 봅니다.`,
-      auto_count: `${cfg.autoWindowDays}일 안에 사고가 최대 ${o}번 있었습니다. ${t}번 이상이면 의심 신호로 봅니다.`,
+      auto_count: `${cfg.autoWindowDays}일 안에 사고가 최대 ${o}번 있었습니다. ${t}번 이상이거나 ${cfg.autoLongWindowDays}일 안에 ${cfg.autoLongCount}번 이상이면 의심 신호로 봅니다.`,
       auto_gap: `가장 가까운 두 사고의 간격이 ${o}일입니다. ${t}일보다 짧으면 의심 신호로 봅니다.`,
-      auto_treat: `접촉 사고인데 치료 기간이 긴(상위 ${top}% 경계 초과) 대인 치료비 청구가 ${o}건입니다. 하나라도 있으면 의심 신호로 봅니다.`,
+      auto_treat: `접촉 사고인데 치료 기간이 긴(${cfg.treatDays}일 초과 또는 상위 ${top}% 경계 초과) 대인 치료비 청구가 ${o}건입니다. 하나라도 있으면 의심 신호로 봅니다.`,
       auto_cost: `같은 사고 유형 중 수리비가 상위 ${top}%에 드는 청구가 ${o}건입니다. 하나라도 있으면 의심 신호로 봅니다.`,
       auto_repeat: `같은 상대방이나 같은 정비소의 사고, 또는 같은 사고의 같은 종류 청구가 ${t}번 이상이면 의심 신호로 봅니다. 해당하는 건은 ${o}건입니다.`,
     })[s.id] || `${s.name}: ${o}`;
