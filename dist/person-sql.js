@@ -83,7 +83,8 @@
           AND c.treat_end IS NOT NULL AND c.treat_end <> '' AND a.accident_type = '접촉'),
       ranked AS (${PERCENTILE('dur', 'grp')}),
       ref AS (SELECT v AS threshold FROM ranked WHERE n >= $minPeers AND rn = MIN(n, c))
-      SELECT b.person_id, b.auto_claim_id FROM base b, ref WHERE b.dur > ref.threshold`,
+      SELECT b.person_id, b.auto_claim_id FROM base b LEFT JOIN ref ON 1 = 1
+      WHERE b.dur > $treatDays OR b.dur > ref.threshold`,
     // 자동차: 같은 사고 유형 집단의 상위 5% 수리비
     autoCost: `
       WITH base AS (
@@ -176,8 +177,9 @@
     const medCost = byPerson(query(db, SQL.medCost, pct), (r) => r.claim_id);
     const medRepeat = byPerson(query(db, SQL.medRepeat, { $rc: cfg.repeatCount }), (r) => r.claim_id);
     const autoCount = new Map(query(db, SQL.autoCount, { $win: cfg.autoWindowDays }).map((r) => [r.person_id, r.n]));
+    const autoLongCount = new Map(query(db, SQL.autoCount, { $win: cfg.autoLongWindowDays }).map((r) => [r.person_id, r.n]));
     const autoGap = new Map(query(db, SQL.autoGap).map((r) => [r.person_id, r.gap]));
-    const autoTreat = byPerson(query(db, SQL.autoTreat, pct), (r) => r.auto_claim_id);
+    const autoTreat = byPerson(query(db, SQL.autoTreat, { ...pct, $treatDays: cfg.treatDays }), (r) => r.auto_claim_id);
     const autoCost = byPerson(query(db, SQL.autoCost, pct), (r) => r.auto_claim_id);
     const repeatAcc = byPerson(query(db, SQL.autoRepeatAccident, { $rc: cfg.repeatCount }), (r) => r.id);
     const repeatClaim = byPerson(query(db, SQL.autoRepeatClaim, { $rc: cfg.repeatCount }), (r) => r.id);
@@ -234,6 +236,7 @@
 
       // 자동차 지표
       const count = autoCount.get(id) || 0;
+      const longCount = autoLongCount.get(id) || 0;
       const minGap = autoGap.has(id) ? autoGap.get(id) : null;
       const accIds = rec.accidents.map((a) => a.accident_id);
       const treatIds = inRecord(rec.autoClaims, 'auto_claim_id', autoTreat.get(id));
@@ -243,8 +246,9 @@
         ...inRecord(rec.autoClaims, 'auto_claim_id', repeatClaim.get(id)),
       ]);
       const auto = [
-        signal('auto_count', '사고 횟수', count >= cfg.autoAccidentCount, count, cfg.autoAccidentCount,
-          count >= cfg.autoAccidentCount ? accIds : [], `${cfg.autoWindowDays}일 안의 최대 사고 수`),
+        signal('auto_count', '사고 횟수', count >= cfg.autoAccidentCount || longCount >= cfg.autoLongCount, count, cfg.autoAccidentCount,
+          count >= cfg.autoAccidentCount || longCount >= cfg.autoLongCount ? accIds : [],
+          `${cfg.autoWindowDays}일 최대 ${count}건, ${cfg.autoLongWindowDays}일 최대 ${longCount}건`),
         signal('auto_gap', '사고 간격', minGap !== null && minGap < cfg.autoGapDays, minGap, cfg.autoGapDays,
           minGap !== null && minGap < cfg.autoGapDays ? accIds : [],
           minGap === null ? '사고가 1건 이하' : '가장 짧은 사고 간격(일)'),
